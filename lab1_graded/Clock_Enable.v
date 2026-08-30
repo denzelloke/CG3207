@@ -13,6 +13,10 @@ module Clock_Enable(
     // define reg threshold to allow 4hz or 1hz frequency
     localparam threshold4hz = 25'd24_999_999; // f=4hz; t=0.25s = 10ns * 25_000_000ticks
     localparam threshold1hz = 27'd99_999_999; // f=1hz' t=1s = 10ns * 100_000_000ticks
+    
+    // for sim
+    // localparam threshold4hz = 2'd2;
+    // localparam threshold1hz = 4'd8;
 
     // define reg counter to be able to count to certain threshold value
     reg [26:0] counter = 0;

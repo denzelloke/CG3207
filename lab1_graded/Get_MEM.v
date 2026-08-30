@@ -34,6 +34,7 @@ end
 // determine upper_lower by corresponding input
 assign upper_lower = addr[0];
 
+
 // determine corresponding memory data that should be displayed on 7-segments
 // addr[8] chooses instruction or data memory
 assign data = (addr[8] == 0) ? IROM[addr[7:1]] : DMEM[addr[7:1]];

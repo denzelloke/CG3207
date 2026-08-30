@@ -10,3 +10,7 @@
 *.jou
 **/*.log
 **/*.jou
+
+# Vivado project file
+*.xpr
+**/*.xpr
