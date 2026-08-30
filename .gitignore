@@ -1,0 +1,12 @@
+# Vivado auto-generated build directories
+**/*.cache/
+**/*.hw/
+**/*.ip_user_files/
+**/*.runs/
+**/*.sim/
+
+# Vivado temporary logs and journals
+*.log
+*.jou
+**/*.log
+**/*.jou
