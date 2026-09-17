@@ -37,19 +37,26 @@ Top test0(sysclk, btnU, btnC, led, dp, anode, cathode);
 
     // sim threshold4hz = 2 ticks
     // sim threshold 1hz = 8 ticks
+    
     always begin
         sysclk = ~sysclk;
         #5;    
     end
     
     initial begin
-        #100;
+        #160;
+        
         btnU = 1;
-        #100 ;
+        btnC = 0;
+        #160 ;
+        
         btnU = 0;
         btnC = 1;
-        #100
-        btnC = 0;
+        #160
+        
+        btnU = 1;
+        btnC = 1;
+        #160
         $finish; 
     end
 
