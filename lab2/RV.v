@@ -65,6 +65,7 @@ module RV #(
 
     // RegFile signals
     //wire CLK ;
+    // TODO: feed Instr into reg too
     wire WE ;
     wire [4:0] rs1 ;
     wire [4:0] rs2 ;
@@ -75,11 +76,14 @@ module RV #(
     wire [31:0] RD2 ;
     
     // Extend Module signals
+    // TODO: feed Instr into InstrImm
     wire [2:0] ImmSrc ;
     wire [24:0] InstrImm ;
     wire [31:0] ExtImm ;
     
+    
     // Decoder signals
+    // TODO: feed Instr into decoder
     wire [6:0] Opcode ;
     wire [2:0] Funct3 ;
     wire [6:0] Funct7 ;
@@ -97,8 +101,13 @@ module RV #(
     //wire [2:0] Funct3;
     //wire [2:0] ALUFlags;
     wire PCSrc;
+    // TODO: use PCSrc to determine what PC_IN will be. handles all of branching
       
     // ALU signals
+    // TODO:  if ALUSrcA == 01 then Src_A = 0 ; else if ALUSrcA == X0 then Src_A = RD1
+    // do the same for Src_B
+    // refer to 2B page 6
+
     wire [31:0] Src_A ;
     wire [31:0] Src_B ;
     //wire [3:0] ALUControl ;
@@ -106,13 +115,14 @@ module RV #(
     wire [2:0] ALUFlags ;
     
     // ProgramCounter signals
-    //wire CLK ;
-    //wire RESET ;
+    // wire CLK ;
+    // wire RESET ;
     wire WE_PC ;    
     wire [31:0] PC_IN ;
     //wire [31:0] PC ; 
         
     // Other internal signals here
+    // TODO: PC_Offset = ExtImm, which is Instr[31:7] extended
     wire [31:0] PC_Offset ;
     wire [31:0] Result ;
     
@@ -126,8 +136,11 @@ module RV #(
                                          // supporting lb/sb/lbu/lh/sh/lhu/lw/sw. Hint: funct3
 
     // todo: other datapath connections here
-	
+
+    // case: instr==lw --> shove ExtImm & RD1 into ALU
+
     // Instantiate RegFile
+    // TODO: assign WD = (MemtoReg) ? ReadData :ALUResult;
     RegFile RegFile1( 
                     CLK,
                     WE,

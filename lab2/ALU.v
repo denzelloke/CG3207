@@ -23,8 +23,8 @@
 --	License terms :
 --	You are free to use this code as long as you
 --		(i) DO NOT post it on any public repository;
---		(ii) use it only for educational purposes;
 --		(iii) accept the responsibility to ensure that your implementation does not violate anyone's intellectual property.
+--		(ii) use it only for educational purposes;
 --		(iv) accept that the program is provided "as is" without warranty of any kind or assurance regarding its suitability for any particular purpose;
 --		(v) send an email to rajesh<dot>panicker<at>ieee.org briefly mentioning its use (except when used for the course CG3207 at the National University of Singapore);
 --		(vi) retain this notice in this file as well as any files derived from this.
@@ -76,16 +76,24 @@ module ALU(
 	        endcase
 	    end
       
+
+	// TODO: ALUFlags
+	// 1. change names of flags 
+	// 2. write assigns for the other 2 flags
 	assign Z = (ALUResult == 0) ? 1 : 0 ;
-    
+    // assign X = ()...
+	// assign Y = ()...	
+
 	assign ALUFlags = {Z, 1'b0, 1'b0} ; 	//{eq, lt, ltu} - all except eq are placeholders. 
+
     						// todo: Will need to be modified in lab 3 to support blt, bltu, bge, bgeu.
     
     
 	// todo: make shifter connections here
 	// Sh signals can be derived directly from the appropriate ALUControl bits
     
-    
+
+    //TODO: shift.
 	// Instantiate Shifter        
 	Shifter Shifter1(
                 Sh,
