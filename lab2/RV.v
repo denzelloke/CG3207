@@ -139,8 +139,11 @@ module RV #(
 
     // case: instr==lw --> shove ExtImm & RD1 into ALU
 
+
+    assign Result = (MemtoReg) ? ReadData : ALUResult;
+    assign WD = Result;
+
     // Instantiate RegFile
-    // TODO: assign WD = (MemtoReg) ? ReadData :ALUResult;
     RegFile RegFile1( 
                     CLK,
                     WE,
