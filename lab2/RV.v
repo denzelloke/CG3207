@@ -65,7 +65,12 @@ module RV #(
 
     // RegFile signals
     //wire CLK ;
-    // TODO: feed Instr into reg too
+    
+    // Feed Instr into reg too
+    assign rs1 = Instr[19:15] ;
+    assign rs2 = Instr[24:20] ;
+    assign rd = Instr[11:7] ;
+    
     wire WE ;
     wire [4:0] rs1 ;
     wire [4:0] rs2 ;
@@ -76,31 +81,38 @@ module RV #(
     wire [31:0] RD2 ;
     
     // Extend Module signals
-    // TODO: feed Instr into InstrImm
+    // Feed Instr into InstrImm
+    assign InstrImm = Instr[31:7] ;
+
     wire [2:0] ImmSrc ;
     wire [24:0] InstrImm ;
     wire [31:0] ExtImm ;
     
     
     // Decoder signals
-    // TODO: feed Instr into decoder
+    // Feed Instr into decoder
+    assign Funct3 = Instr[14:12] ;
+    assign Opcode = Instr[6:0] ;
+    assign Funct7 = Instr[31:25] ;
+    
+
     wire [6:0] Opcode ;
     wire [2:0] Funct3 ;
     wire [6:0] Funct7 ;
     wire [1:0] PCS ;
     wire RegWrite ;
-    //wire MemWrite ;
+    wire MemWrite ;
     wire MemtoReg ;
-    //wire [1:0] ALUSrcA ;
-    wire ALUSrcB ;
-    //wire [2:0] ImmSrc ;
+    wire [1:0] ALUSrcA ;
+    wire [1:0]ALUSrcB ;
+    wire [2:0] ImmSrc ;
     wire [3:0] ALUControl ;
 
     // PC_Logic signals
-    //wire [1:0] PCS
-    //wire [2:0] Funct3;
-    //wire [2:0] ALUFlags;
-    wire PCSrc;
+    wire [1:0] PCS
+    wire [2:0] Funct3;
+    wire [2:0] ALUFlags;
+    wire [2:0] PCSrc;
     // TODO: use PCSrc to determine what PC_IN will be. handles all of branching
       
     // ALU signals
@@ -139,7 +151,7 @@ module RV #(
 
     // case: instr==lw --> shove ExtImm & RD1 into ALU
 
-
+    //added MemtoReg function to select between ALUResult and ReadData for Result
     assign Result = (MemtoReg) ? ReadData : ALUResult;
     assign WD = Result;
 
