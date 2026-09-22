@@ -45,7 +45,7 @@ module ALU(
 	wire [31:0] ShIn ;
 	wire [31:0] ShOut ;
 	
-	// Other signals
+	// Other signals; 33-bits wide to accommodate the extra C_0 bit
 	wire [32:0] S_wider ;
 	reg [32:0] Src_A_comp ;
 	reg [32:0] Src_B_comp ;
@@ -62,11 +62,11 @@ module ALU(
 		Src_B_comp = {1'b0, Src_B} ;
     
 		case(ALUControl)
-			4'b0000: ALUResult = S_wider[31:0] ;	//add          
-	            	4'b0001: begin				//sub
+			4'b0000: ALUResult = S_wider[31:0] ;			//add; keep lower 32 bits; if carry is 1, there was no borrow ie postive result         
+	            	4'b0001: begin							//sub
 				C_0[0] = 1 ;  
 				Src_B_comp = {1'b0, ~ Src_B} ;
-				ALUResult = S_wider[31:0] ;
+				ALUResult = S_wider[31:0] ;					//keep lower 32 bits
 			end
 	            	4'b1110: ALUResult = Src_A & Src_B ;	// and
 	            	4'b1100: ALUResult = Src_A | Src_B ; 	// or
@@ -77,14 +77,17 @@ module ALU(
 	    end
       
 
-	// TODO: ALUFlags
-	// 1. change names of flags 
-	// 2. write assigns for the other 2 flags
-	assign Z = (ALUResult == 0) ? 1 : 0 ;
-    // assign X = ()...
-	// assign Y = ()...	
+	// ALUFlags only for subtraction operations, specifically A-B (in this order)
+	assign Z = (ALUResult == 0) ? 1 : 0 ;									//check result for zero
+    assign N = ALUResult[31]												//check MSB for negativity
+ 	assign C = S_wider[32]													//check if carry bit is produced for unsigned arithmetic
 
-	assign ALUFlags = {Z, 1'b0, 1'b0} ; 	//{eq, lt, ltu} - all except eq are placeholders. 
+
+	assign V = Src_A[31] ^ Src_B[31]) & (ALUResult[31] ^ Src_A[31]);		//check if the additional carry bit was used for borrow
+	//1. subtracting two numbers of the same sign cannot cause an overflow - so XOR the signs
+	//2. if stored result has opposite sign from A, overflow occured - so XOR ALUResult[31] with Src_A[31]
+
+	assign ALUFlags = {Z, (N ^ V), ~C} ; 	//{eq, lt, ltu} - all except eq are placeholders. 
 
     						// todo: Will need to be modified in lab 3 to support blt, bltu, bge, bgeu.
     
@@ -93,7 +96,7 @@ module ALU(
 	// Sh signals can be derived directly from the appropriate ALUControl bits
     
 
-    //TODO: shift.
+    //TODO: Shifter operations
 	// Instantiate Shifter        
 	Shifter Shifter1(
                 Sh,

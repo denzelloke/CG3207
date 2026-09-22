@@ -64,13 +64,7 @@ module RV #(
     //  except if the connection is within the same stage.
 
     // RegFile signals
-    //wire CLK ;
-    
-    // Feed Instr into reg too
-    assign rs1 = Instr[19:15] ;
-    assign rs2 = Instr[24:20] ;
-    assign rd = Instr[11:7] ;
-    
+    wire CLK ;   
     wire WE ;
     wire [4:0] rs1 ;
     wire [4:0] rs2 ;
@@ -79,23 +73,21 @@ module RV #(
     wire [31:0] R15 ;
     wire [31:0] RD1 ;
     wire [31:0] RD2 ;
+
+    // Feed Instr into RegFile
+    assign rs1 = Instr[19:15] ;
+    assign rs2 = Instr[24:20] ;
+    assign rd = Instr[11:7] ;
     
     // Extend Module signals
-    // Feed Instr into InstrImm
-    assign InstrImm = Instr[31:7] ;
-
     wire [2:0] ImmSrc ;
     wire [24:0] InstrImm ;
     wire [31:0] ExtImm ;
-    
+
+    // Feed Instr into InstrImm
+    assign InstrImm = Instr[31:7] ;
     
     // Decoder signals
-    // Feed Instr into decoder
-    assign Funct3 = Instr[14:12] ;
-    assign Opcode = Instr[6:0] ;
-    assign Funct7 = Instr[31:25] ;
-    
-
     wire [6:0] Opcode ;
     wire [2:0] Funct3 ;
     wire [6:0] Funct7 ;
@@ -108,35 +100,62 @@ module RV #(
     wire [2:0] ImmSrc ;
     wire [3:0] ALUControl ;
 
+    // Feed Instr into decoder
+    assign Funct3 = Instr[14:12] ;
+    assign Opcode = Instr[6:0] ;
+    assign Funct7 = Instr[31:25] ;
+
     // PC_Logic signals
     wire [1:0] PCS
     wire [2:0] Funct3;
     wire [2:0] ALUFlags;
     wire [2:0] PCSrc;
-    // TODO: use PCSrc to determine what PC_IN will be. handles all of branching
-      
-    // ALU signals
-    // TODO:  if ALUSrcA == 01 then Src_A = 0 ; else if ALUSrcA == X0 then Src_A = RD1
-    // do the same for Src_B
-    // refer to 2B page 6
+    
+    // Use PCSrc to determine what PC_IN will be. handles all of branching
+    assign PC_Offset = (PCSrc[0]) ? ExtImm : 32'd4;
+    assign PCSrc_B = (PCSrc[1]) ? RD1 : PC;
+    assign PC_IN = PC_Offset + PCSrc_B;
 
+    // ALU signals
     wire [31:0] Src_A ;
     wire [31:0] Src_B ;
-    //wire [3:0] ALUControl ;
-    //wire [31:0] ALUResult ;
+    wire [3:0] ALUControl ;
+    wire [31:0] ALUResult ;
     wire [2:0] ALUFlags ;
+
+    // ALU operations
+    always @ (*) begin
+        Src_A = 32'b0;                          //default value 
+        Src_B = 32'b0;                          //default value
+        case (ALUSrcA) begin
+            2'b00, 2'b10: Src_A = RD1;          //DP Reg, DP Imm, load, store, branch
+            2'b11: Src_A = PC;                  //jal, auipc, jalr
+            2'b01: Src_A = 32'b0;               //lui
+        endcase
+        case (ALUSrcB) begin
+            2'b00, 2'b10: Src_B = RD2;          //DP Reg, branch
+            2'b11: Src_B = ExtImm;              //DP Imm, load, store, auipc, lui
+            2'b01: Src_B = 32'd4;               //jal, jalr
+        endcase
+    end
+
     
     // ProgramCounter signals
-    // wire CLK ;
+    wire CLK ;
     // wire RESET ;
-    wire WE_PC ;    
+    wire WE_PC ;                //used below for multi-cycle ops and pipelining with hazard hardware
     wire [31:0] PC_IN ;
-    //wire [31:0] PC ; 
+    wire [31:0] PC ; 
+
+    // Write PC using PC_IN
+    always @ (posedge clk) begin
+        PC <= PC_IN;
+    end
         
     // Other internal signals here
-    // TODO: PC_Offset = ExtImm, which is Instr[31:7] extended
-    wire [31:0] PC_Offset ;
-    wire [31:0] Result ;
+    wire [31:0] PC_Offset ;     //used for PCSrc[0] mux 
+    wire [31:0] Result ;        //used in WD 
+    wire [31:0] PCSrc_B ;       //used for PCSrc[1] mux
     
     assign MemRead = MemtoReg; // This is needed for the proper functionality of some devices such as UART CONSOLE
     assign WE_PC = 1 ;  // Will need to control it for multi-cycle operations (Multiplication, Division) and/or Pipelining with hazard hardware.
