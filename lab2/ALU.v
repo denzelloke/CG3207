@@ -79,24 +79,22 @@ module ALU(
 
 	// ALUFlags only for subtraction operations, specifically A-B (in this order)
 	assign Z = (ALUResult == 0) ? 1 : 0 ;									//check result for zero
-    assign N = ALUResult[31]												//check MSB for negativity
- 	assign C = S_wider[32]													//check if carry bit is produced for unsigned arithmetic
-
-
-	assign V = Src_A[31] ^ Src_B[31]) & (ALUResult[31] ^ Src_A[31]);		//check if the additional carry bit was used for borrow
+    assign N = ALUResult[31];												//check MSB for negativity
+ 	assign C = S_wider[32];													//check if carry bit is produced for unsigned arithmetic
+	assign V = (Src_A[31] ^ Src_B[31]) & (ALUResult[31] ^ Src_A[31]);		//check if the additional carry bit was used for borrow
 	//1. subtracting two numbers of the same sign cannot cause an overflow - so XOR the signs
 	//2. if stored result has opposite sign from A, overflow occured - so XOR ALUResult[31] with Src_A[31]
 
 	assign ALUFlags = {Z, (N ^ V), ~C} ; 	//{eq, lt, ltu} - all except eq are placeholders. 
 
-    						// todo: Will need to be modified in lab 3 to support blt, bltu, bge, bgeu.
+    						// TODO: Will need to be modified to support blt, bltu, bge, bgeu.
     
     
-	// todo: make shifter connections here
-	// Sh signals can be derived directly from the appropriate ALUControl bits
-    
+	// Sh signals derived directly from the appropriate ALUControl bits
+	assign Sh = {ALUControl[3], ALUControl[0]};
+    assign ShIn = Src_A;
+	assign Shamt5 = Src_B[4:0];
 
-    //TODO: Shifter operations
 	// Instantiate Shifter        
 	Shifter Shifter1(
                 Sh,
