@@ -85,10 +85,7 @@ module ALU(
 	//1. subtracting two numbers of the same sign cannot cause an overflow - so XOR the signs
 	//2. if stored result has opposite sign from A, overflow occured - so XOR ALUResult[31] with Src_A[31]
 
-	assign ALUFlags = {Z, (N ^ V), ~C} ; 	//{eq, lt, ltu} - all except eq are placeholders. 
-
-    						// TODO: Will need to be modified to support blt, bltu, bge, bgeu.
-    
+	assign ALUFlags = {Z, (N ^ V), ~C} ; 	//{eq, lt, ltu}; Complements of ALUFlags are {ne, ge, geu} 
     
 	// Sh signals derived directly from the appropriate ALUControl bits
 	assign Sh = {ALUControl[3], ALUControl[0]};
