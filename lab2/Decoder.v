@@ -52,7 +52,7 @@ module Decoder(
     
     // Decoder implementation is as follows:
     always @ (*) begin
-        case (Opcode) begin 
+        case (Opcode) 
             7'h33: begin                // DP Reg
                 PCS = 2'b00;
                 MemtoReg = 0;
@@ -144,8 +144,18 @@ module Decoder(
                 ImmSrc = 3'b011;        // I type
                 ALUControl = 4'b0000;    // add
             end
+            default: begin
+                PCS = 2'b00;
+                MemtoReg = 0;
+                RegWrite = 0;
+                MemWrite = 0;
+                ALUSrcA = 2'b00;
+                ALUSrcB = 2'b00;  
+                ImmSrc = 3'b011;        // I type
+                ALUControl = 4'b0000;    // add
+            end
         endcase
-	    
+     end
 endmodule
 
 

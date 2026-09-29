@@ -72,6 +72,9 @@ module ALU(
 	            	4'b1100: ALUResult = Src_A | Src_B ; 	// or
 	            
 			// include cases for shifts		// shifts
+			4'b0010, 4'b1010, 4'b1011: begin 
+			        ALUResult = ShOut;      //SLL, SRL, SRA
+			end
 			default: ALUResult = 32'bx;
 	        endcase
 	    end

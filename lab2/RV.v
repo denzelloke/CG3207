@@ -64,7 +64,7 @@ module RV #(
     //  except if the connection is within the same stage.
 
     // RegFile signals
-    wire CLK ;   
+    //wire CLK ;    //duplicate
     wire WE ;
     wire [4:0] rs1 ;
     wire [4:0] rs2 ;
@@ -93,11 +93,11 @@ module RV #(
     wire [6:0] Funct7 ;
     wire [1:0] PCS ;
     wire RegWrite ;
-    wire MemWrite ;
+    //wire MemWrite ;         //duplicate
     wire MemtoReg ;
     wire [1:0] ALUSrcA ;
     wire [1:0]ALUSrcB ;
-    wire [2:0] ImmSrc ;
+    //wire [2:0] ImmSrc ;       //duplicate
     wire [3:0] ALUControl ;
 
     // Feed Instr into decoder
@@ -106,10 +106,10 @@ module RV #(
     assign Funct7 = Instr[31:25] ;
 
     // PC_Logic signals
-    wire [1:0] PCS
-    wire [2:0] Funct3;
+    //wire [1:0] PCS;           //duplicate
+    //wire [2:0] Funct3;        //duplicate
     wire [2:0] ALUFlags;
-    wire [2:0] PCSrc;
+    wire [1:0] PCSrc;
     
     // Use PCSrc to determine what PC_IN will be. handles all of branching
     assign PC_Offset = (PCSrc[0]) ? ExtImm : 32'd4;
@@ -117,22 +117,22 @@ module RV #(
     assign PC_IN = PC_Offset + PCSrc_B;
 
     // ALU signals
-    wire [31:0] Src_A ;
-    wire [31:0] Src_B ;
-    wire [3:0] ALUControl ;
-    wire [31:0] ALUResult ;
-    wire [2:0] ALUFlags ;
+    reg [31:0] Src_A ;
+    reg [31:0] Src_B ;
+    //wire [3:0] ALUControl ;       //duplicate
+    //wire [31:0] ALUResult ;       //duplicate
+    //wire [2:0] ALUFlags ;         //duplicate
 
     // ALU operations
     always @ (*) begin
         Src_A = 32'b0;                          //default value 
         Src_B = 32'b0;                          //default value
-        case (ALUSrcA) begin
+        case (ALUSrcA)
             2'b00, 2'b10: Src_A = RD1;          //DP Reg, DP Imm, load, store, branch
             2'b11: Src_A = PC;                  //jal, auipc, jalr
             2'b01: Src_A = 32'b0;               //lui
         endcase
-        case (ALUSrcB) begin
+        case (ALUSrcB)
             2'b00, 2'b10: Src_B = RD2;          //DP Reg, branch
             2'b11: Src_B = ExtImm;              //DP Imm, load, store, auipc, lui
             2'b01: Src_B = 32'd4;               //jal, jalr
@@ -141,16 +141,16 @@ module RV #(
 
     
     // ProgramCounter signals
-    wire CLK ;
-    // wire RESET ;
+    //wire CLK ;            //duplicate
+    // wire RESET ;         //duplicate
     wire WE_PC ;                //used below for multi-cycle ops and pipelining with hazard hardware
     wire [31:0] PC_IN ;
-    wire [31:0] PC ; 
+    //wire [31:0] PC ;      //duplicate 
 
     // Write PC using PC_IN
-    always @ (posedge clk) begin
-        PC <= PC_IN;
-    end
+//    always @ (posedge CLK) begin
+//        PC <= PC_IN;
+//    end
         
     // Other internal signals here
     wire [31:0] PC_Offset ;     //used for PCSrc[0] mux 
@@ -173,6 +173,12 @@ module RV #(
     //added MemtoReg function to select between ALUResult and ReadData for Result
     assign Result = (MemtoReg) ? ReadData : ALUResult;
     assign WD = Result;
+    
+    //assign WE for RegFile
+    assign WE = RegWrite;
+    
+    //assign WriteData for RegFile
+    assign WriteData = RD2;
 
     // Instantiate RegFile
     RegFile RegFile1( 
@@ -202,7 +208,7 @@ module RV #(
                     RegWrite,
                     MemWrite,
                     MemtoReg,
-                    //ALUSrcA,
+                    ALUSrcA,
                     ALUSrcB,
                     ImmSrc,
                     ALUControl
