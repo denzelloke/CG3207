@@ -114,7 +114,8 @@ module RV #(
     // Use PCSrc to determine what PC_IN will be. handles all of branching
     assign PC_Offset = (PCSrc[0]) ? ExtImm : 32'd4;
     assign PCSrc_B = (PCSrc[1]) ? RD1 : PC;
-    assign PC_IN = PC_Offset + PCSrc_B;
+    assign PC_Target = PC_Offset + PCSrc_B;
+    assign PC_IN = (PCS = 2'b11) ? {PC_Target[31:1], 1'b0; PC_Target};  //jalr - need to clear last bit, otherwise proceed as per normal
 
     // ALU signals
     reg [31:0] Src_A ;
@@ -153,7 +154,8 @@ module RV #(
 //    end
         
     // Other internal signals here
-    wire [31:0] PC_Offset ;     //used for PCSrc[0] mux 
+    wire [31:0] PC_Offset ;     //used for PCSrc[0] mux
+    wire [31:0] PC_Target ;     //used when assigning PC_IN 
     wire [31:0] Result ;        //used in WD 
     wire [31:0] PCSrc_B ;       //used for PCSrc[1] mux
     
@@ -175,7 +177,7 @@ module RV #(
     assign WD = Result;
     
     //assign WE for RegFile
-    assign WE = RegWrite;
+    assign WE = RegWrite && !RESET;
     
     //assign WriteData for RegFile
     assign WriteData = RD2;
