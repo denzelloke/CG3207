@@ -47,8 +47,8 @@ module PC_Logic( // This is a combinational module, unlike ARM. See the note bel
     
 	// Conditional logic is as follows
 	always @ (*) begin
-		PCSrc = 2'b00;							//non-control and default value for implicit else
 	case (PCS)							
+	    2'b00: PCSrc = 2'b00;					//non-control
 		2'b01: if (Funct3 == 3'b000) begin		// beq
 			PCSrc = {1'b0, ALUFlags[2]};
 		end
@@ -67,15 +67,14 @@ module PC_Logic( // This is a combinational module, unlike ARM. See the note bel
 		else if (Funct3 == 3'b111) begin		// bgeu
 			PCSrc = {1'b0, ~ALUFlags[0]};
 		end
+		else begin
+			PCSrc = 2'b00;						//default
+		end
 		2'b10: PCSrc = 2'b01;					// jal
 		2'b11: PCSrc = 2'b11;					//jalr
+		default: PCSrc = 2'b00;                 //default
 	endcase
-	
-	
 	end	
-
-	
-	
 endmodule
 
 

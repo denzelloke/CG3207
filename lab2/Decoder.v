@@ -72,7 +72,7 @@ module Decoder(
                 ALUSrcB = 2'b11;  
                 ImmSrc = 3'b011;        // I type
                 ALUControl [3:1] = Funct3;
-                ALUControl [0] = (Funct3 == 3'h5) ? Funct7[5] : 0;   //alucontrol[0] is funct7[5] when funct3 = 0x5 ie srli/srai operations; funct7[5] is technically the immediate 
+                ALUControl [0] = (Funct3 == 3'h5) ? Funct7[5] : 1'b0;   //alucontrol[0] is funct7[5] when funct3 = 0x5 ie srli/srai operations; funct7[5] is technically the immediate 
             end
             7'h03: begin                // load 
                 PCS = 2'b00;

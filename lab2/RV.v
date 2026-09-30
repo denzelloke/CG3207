@@ -74,19 +74,11 @@ module RV #(
     wire [31:0] RD1 ;
     wire [31:0] RD2 ;
 
-    // Feed Instr into RegFile
-    assign rs1 = Instr[19:15] ;
-    assign rs2 = Instr[24:20] ;
-    assign rd = Instr[11:7] ;
-    
     // Extend Module signals
     wire [2:0] ImmSrc ;
     wire [24:0] InstrImm ;
     wire [31:0] ExtImm ;
 
-    // Feed Instr into InstrImm
-    assign InstrImm = Instr[31:7] ;
-    
     // Decoder signals
     wire [6:0] Opcode ;
     wire [2:0] Funct3 ;
@@ -100,23 +92,12 @@ module RV #(
     //wire [2:0] ImmSrc ;       //duplicate
     wire [3:0] ALUControl ;
 
-    // Feed Instr into decoder
-    assign Funct3 = Instr[14:12] ;
-    assign Opcode = Instr[6:0] ;
-    assign Funct7 = Instr[31:25] ;
-
     // PC_Logic signals
     //wire [1:0] PCS;           //duplicate
     //wire [2:0] Funct3;        //duplicate
     wire [2:0] ALUFlags;
     wire [1:0] PCSrc;
     
-    // Use PCSrc to determine what PC_IN will be. handles all of branching
-    assign PC_Offset = (PCSrc[0]) ? ExtImm : 32'd4;
-    assign PCSrc_B = (PCSrc[1]) ? RD1 : PC;
-    assign PC_Target = PC_Offset + PCSrc_B;
-    assign PC_IN = (PCS = 2'b11) ? {PC_Target[31:1], 1'b0; PC_Target};  //jalr - need to clear last bit, otherwise proceed as per normal
-
     // ALU signals
     reg [31:0] Src_A ;
     reg [31:0] Src_B ;
@@ -124,39 +105,16 @@ module RV #(
     //wire [31:0] ALUResult ;       //duplicate
     //wire [2:0] ALUFlags ;         //duplicate
 
-    // ALU operations
-    always @ (*) begin
-        Src_A = 32'b0;                          //default value 
-        Src_B = 32'b0;                          //default value
-        case (ALUSrcA)
-            2'b00, 2'b10: Src_A = RD1;          //DP Reg, DP Imm, load, store, branch
-            2'b11: Src_A = PC;                  //jal, auipc, jalr
-            2'b01: Src_A = 32'b0;               //lui
-        endcase
-        case (ALUSrcB)
-            2'b00, 2'b10: Src_B = RD2;          //DP Reg, branch
-            2'b11: Src_B = ExtImm;              //DP Imm, load, store, auipc, lui
-            2'b01: Src_B = 32'd4;               //jal, jalr
-        endcase
-    end
-
-    
     // ProgramCounter signals
     //wire CLK ;            //duplicate
     // wire RESET ;         //duplicate
     wire WE_PC ;                //used below for multi-cycle ops and pipelining with hazard hardware
-    wire [31:0] PC_IN ;
+    reg [31:0] PC_IN ;
     //wire [31:0] PC ;      //duplicate 
 
-    // Write PC using PC_IN
-//    always @ (posedge CLK) begin
-//        PC <= PC_IN;
-//    end
-        
     // Other internal signals here
     wire [31:0] PC_Offset ;     //used for PCSrc[0] mux
     wire [31:0] PC_Target ;     //used when assigning PC_IN 
-    wire [31:0] Result ;        //used in WD 
     wire [31:0] PCSrc_B ;       //used for PCSrc[1] mux
     
     assign MemRead = MemtoReg; // This is needed for the proper functionality of some devices such as UART CONSOLE
@@ -172,15 +130,53 @@ module RV #(
 
     // case: instr==lw --> shove ExtImm & RD1 into ALU
 
+    // Feed Instr into RegFile
+    assign rs1 = Instr[19:15] ;
+    assign rs2 = Instr[24:20] ;
+    assign rd = Instr[11:7] ;
+    // Feed Instr into InstrImm
+    assign InstrImm = Instr[31:7] ;
+    // Feed Instr into decoder
+    assign Funct3 = Instr[14:12] ;
+    assign Opcode = Instr[6:0] ;
+    assign Funct7 = Instr[31:25] ;
+
     //added MemtoReg function to select between ALUResult and ReadData for Result
-    assign Result = (MemtoReg) ? ReadData : ALUResult;
-    assign WD = Result;
+    assign WD = (MemtoReg) ? ReadData : ALUResult;
     
     //assign WE for RegFile
-    assign WE = RegWrite && !RESET;
+    assign WE = RegWrite;
     
     //assign WriteData for RegFile
     assign WriteData = RD2;
+    
+    
+    always @ (*) begin
+        case (PCSrc)
+            2'b00: PC_IN = PC + 32'd4; //non-control
+            2'b01: PC_IN = PC + ExtImm; //jal
+            2'b11: PC_IN = (RD1 + ExtImm) & ~32'd1; //jalr
+            default: PC_IN = PC + 32'd4; //default case
+        endcase
+    end
+    
+    // ALU operations
+    always @ (*) begin
+        Src_A = RD1;              //default case
+        Src_B = RD2;              //default case
+        case (ALUSrcA)
+            2'b00, 2'b10: Src_A = RD1;          //DP Reg, DP Imm, load, store, branch
+            2'b11: Src_A = PC;                  //jal, auipc, jalr
+            2'b01: Src_A = 32'b0;               //lui
+            
+        endcase
+        case (ALUSrcB)
+            2'b00, 2'b10: Src_B = RD2;          //DP Reg, branch
+            2'b11: Src_B = ExtImm;              //DP Imm, load, store, auipc, lui
+            2'b01: Src_B = 32'd4;               //jal, jalr
+            
+        endcase
+    end
 
     // Instantiate RegFile
     RegFile RegFile1( 
