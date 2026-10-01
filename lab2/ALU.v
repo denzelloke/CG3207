@@ -63,19 +63,20 @@ module ALU(
 		Src_B_comp = {1'b0, Src_B} ;
     
 		case(ALUControl)
-			4'b0000: ALUResult = S_wider[31:0] ;			//add; keep lower 32 bits; if carry is 1, there was no borrow ie postive result         
-	            	4'b0001: begin							//sub
+			4'b0000: ALUResult = S_wider[31:0] ;	//add; keep lower 32 bits; if carry is 1, there was no borrow ie postive result         
+			4'b0001: begin							//sub
 				C_0[0] = 1 ;  
 				Src_B_comp = {1'b0, ~ Src_B} ;
-				ALUResult = S_wider[31:0] ;					//keep lower 32 bits
+				ALUResult = S_wider[31:0] ;         //keep lower 32 bits
 			end
-	            	4'b1110: ALUResult = Src_A & Src_B ;	// and
-	            	4'b1100: ALUResult = Src_A | Src_B ; 	// or
+	        4'b1110: ALUResult = Src_A & Src_B ;	// and
+	        4'b1100: ALUResult = Src_A | Src_B ; 	// or
 	            
-			// include cases for shifts		// shifts
-			4'b0010, 4'b1010, 4'b1011: begin 
-			        ALUResult = ShOut;      //SLL, SRL, SRA
-			end
+			//cases for shifts		
+			4'b0010, 4'b1010, 4'b1011: ALUResult = ShOut;    //sll, srl, sra
+			4'b1000: ALUResult = Src_A ^ Src_B;              // xor, xori
+            4'b0100: ALUResult = ($signed(Src_A) < $signed(Src_B)); // slt, slti
+            4'b0110: ALUResult = (Src_A < Src_B);                   //sltu, sltiu
 			default: ALUResult = 32'b0;
 	        endcase
 	    end
