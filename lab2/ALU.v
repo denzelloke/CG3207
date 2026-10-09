@@ -45,12 +45,13 @@ module ALU(
 	wire [31:0] ShIn ;
 	wire [31:0] ShOut ;
 	
-	// Other signals
+	// Other signals; 33-bits wide to accommodate the extra C_0 bit
 	wire [32:0] S_wider ;
 	reg [32:0] Src_A_comp ;
 	reg [32:0] Src_B_comp ;
 	reg [32:0] C_0 ;
-	wire N, Z, C, V; 	// optional intermediate values to derive eq, lt, ltu
+	wire N, Z, C; 	// optional intermediate values to derive eq, lt, ltu
+	reg V;
 				// Hint: We need to care about V only for subtraction
 	
 	assign S_wider = Src_A_comp + Src_B_comp + C_0 ;
@@ -62,38 +63,50 @@ module ALU(
 		Src_B_comp = {1'b0, Src_B} ;
     
 		case(ALUControl)
-			4'b0000: ALUResult = S_wider[31:0] ;	//add          
-	            	4'b0001: begin				//sub
+			4'b0000: ALUResult = S_wider[31:0] ;	//add; keep lower 32 bits; if carry is 1, there was no borrow ie postive result         
+			4'b0001: begin							//sub
 				C_0[0] = 1 ;  
 				Src_B_comp = {1'b0, ~ Src_B} ;
-				ALUResult = S_wider[31:0] ;
+				ALUResult = S_wider[31:0] ;         //keep lower 32 bits
 			end
-	            	4'b1110: ALUResult = Src_A & Src_B ;	// and
-	            	4'b1100: ALUResult = Src_A | Src_B ; 	// or
+	        4'b1110: ALUResult = Src_A & Src_B ;	// and
+	        4'b1100: ALUResult = Src_A | Src_B ; 	// or
 	            
-			// include cases for shifts		// shifts
-			default: ALUResult = 32'bx;
+			//cases for shifts		
+			4'b0010, 4'b1010, 4'b1011: ALUResult = ShOut;    //sll, srl, sra
+			4'b1000: ALUResult = Src_A ^ Src_B;              // xor, xori
+            4'b0100: ALUResult = ($signed(Src_A) < $signed(Src_B)); // slt, slti
+            4'b0110: ALUResult = (Src_A < Src_B);                   //sltu, sltiu
+			default: ALUResult = 32'b0;
 	        endcase
 	    end
       
 
-	// TODO: ALUFlags
-	// 1. change names of flags 
-	// 2. write assigns for the other 2 flags
-	assign Z = (ALUResult == 0) ? 1 : 0 ;
-    // assign X = ()...
-	// assign Y = ()...	
+	// ALUFlags only for subtraction operations, specifically A-B (in this order)
+	assign Z = (ALUResult == 0) ? 1'b1 : 1'b0 ;									//check result for zero
+    assign N = ALUResult[31];												//check MSB for negativity
+ 	assign C = S_wider[32];													//check if carry bit is produced for unsigned arithmetic
+	
+	always @(*) begin
+		if (ALUControl == 4'b0001) begin			//subtraction
+			V = (Src_A[31] ^ ALUResult[31]) & (Src_A[31] ^ Src_B[31]);	
+		end
+		else if (ALUControl == 4'b0000) begin		//addition
+			V = (Src_A[31] ^ ALUResult[31]) & ~(Src_A[31] ^ Src_B[31]);				
+		
+		end
+		else begin
+			V = 1'b0;	//no overflow for other operations
+		end
+	end
 
-	assign ALUFlags = {Z, 1'b0, 1'b0} ; 	//{eq, lt, ltu} - all except eq are placeholders. 
+	assign ALUFlags = {Z, (N ^ V), ~C} ; 	//{eq, lt, ltu}; Complements of ALUFlags are {ne, ge, geu} 
+    
+	// Sh signals derived directly from the appropriate ALUControl bits
+	assign Sh = {ALUControl[3], ALUControl[0]};
+    assign ShIn = Src_A;
+	assign Shamt5 = Src_B[4:0];
 
-    						// todo: Will need to be modified in lab 3 to support blt, bltu, bge, bgeu.
-    
-    
-	// todo: make shifter connections here
-	// Sh signals can be derived directly from the appropriate ALUControl bits
-    
-
-    //TODO: shift.
 	// Instantiate Shifter        
 	Shifter Shifter1(
                 Sh,

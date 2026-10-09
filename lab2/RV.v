@@ -64,8 +64,7 @@ module RV #(
     //  except if the connection is within the same stage.
 
     // RegFile signals
-    //wire CLK ;
-    // TODO: feed Instr into reg too
+    //wire CLK ;    //duplicate
     wire WE ;
     wire [4:0] rs1 ;
     wire [4:0] rs2 ;
@@ -74,57 +73,49 @@ module RV #(
     wire [31:0] R15 ;
     wire [31:0] RD1 ;
     wire [31:0] RD2 ;
-    
+
     // Extend Module signals
-    // TODO: feed Instr into InstrImm
     wire [2:0] ImmSrc ;
     wire [24:0] InstrImm ;
     wire [31:0] ExtImm ;
-    
-    
+
     // Decoder signals
-    // TODO: feed Instr into decoder
     wire [6:0] Opcode ;
     wire [2:0] Funct3 ;
     wire [6:0] Funct7 ;
     wire [1:0] PCS ;
     wire RegWrite ;
-    //wire MemWrite ;
+    //wire MemWrite ;         //duplicate
     wire MemtoReg ;
-    //wire [1:0] ALUSrcA ;
-    wire ALUSrcB ;
-    //wire [2:0] ImmSrc ;
+    wire [1:0] ALUSrcA ;
+    wire [1:0]ALUSrcB ;
+    //wire [2:0] ImmSrc ;       //duplicate
     wire [3:0] ALUControl ;
 
     // PC_Logic signals
-    //wire [1:0] PCS
-    //wire [2:0] Funct3;
-    //wire [2:0] ALUFlags;
-    wire PCSrc;
-    // TODO: use PCSrc to determine what PC_IN will be. handles all of branching
-      
-    // ALU signals
-    // TODO:  if ALUSrcA == 01 then Src_A = 0 ; else if ALUSrcA == X0 then Src_A = RD1
-    // do the same for Src_B
-    // refer to 2B page 6
-
-    wire [31:0] Src_A ;
-    wire [31:0] Src_B ;
-    //wire [3:0] ALUControl ;
-    //wire [31:0] ALUResult ;
-    wire [2:0] ALUFlags ;
+    //wire [1:0] PCS;           //duplicate
+    //wire [2:0] Funct3;        //duplicate
+    wire [2:0] ALUFlags;
+    wire [1:0] PCSrc;
     
+    // ALU signals
+    reg [31:0] Src_A ;
+    reg [31:0] Src_B ;
+    //wire [3:0] ALUControl ;       //duplicate
+    //wire [31:0] ALUResult ;       //duplicate
+    //wire [2:0] ALUFlags ;         //duplicate
+
     // ProgramCounter signals
-    // wire CLK ;
-    // wire RESET ;
-    wire WE_PC ;    
-    wire [31:0] PC_IN ;
-    //wire [31:0] PC ; 
-        
+    //wire CLK ;            //duplicate
+    // wire RESET ;         //duplicate
+    wire WE_PC ;                //used below for multi-cycle ops and pipelining with hazard hardware
+    reg [31:0] PC_IN ;
+    //wire [31:0] PC ;      //duplicate 
+
     // Other internal signals here
-    // TODO: PC_Offset = ExtImm, which is Instr[31:7] extended
-    wire [31:0] PC_Offset ;
-    wire [31:0] Result ;
+    wire [31:0] PC_Offset ;     //used for PCSrc[0] mux
+    wire [31:0] PC_Target ;     //used when assigning PC_IN 
+    wire [31:0] PCSrc_B ;       //used for PCSrc[1] mux
     
     assign MemRead = MemtoReg; // This is needed for the proper functionality of some devices such as UART CONSOLE
     assign WE_PC = 1 ;  // Will need to control it for multi-cycle operations (Multiplication, Division) and/or Pipelining with hazard hardware.
@@ -139,8 +130,55 @@ module RV #(
 
     // case: instr==lw --> shove ExtImm & RD1 into ALU
 
+    // Feed Instr into RegFile
+    assign rs1 = Instr[19:15] ;
+    assign rs2 = Instr[24:20] ;
+    assign rd = Instr[11:7] ;
+    // Feed Instr into InstrImm
+    assign InstrImm = Instr[31:7] ;
+    // Feed Instr into decoder
+    assign Funct3 = Instr[14:12] ;
+    assign Opcode = Instr[6:0] ;
+    assign Funct7 = Instr[31:25] ;
+
+    //added MemtoReg function to select between ALUResult and ReadData for Result
+    assign WD = (MemtoReg) ? ReadData : ALUResult;
+    
+    //assign WE for RegFile
+    assign WE = RegWrite;
+    
+    //assign WriteData for RegFile
+    assign WriteData = RD2;
+    
+    
+    always @ (*) begin
+        case (PCSrc)
+            2'b00: PC_IN = PC + 32'd4; //non-control
+            2'b01: PC_IN = PC + ExtImm; //jal
+            2'b11: PC_IN = (RD1 + ExtImm) & ~32'd1; //jalr
+            default: PC_IN = PC + 32'd4; //default case
+        endcase
+    end
+    
+    // ALU operations
+    always @ (*) begin
+        Src_A = RD1;              //default case
+        Src_B = RD2;              //default case
+        case (ALUSrcA)
+            2'b00, 2'b10: Src_A = RD1;          //DP Reg, DP Imm, load, store, branch
+            2'b11: Src_A = PC;                  //jal, auipc, jalr
+            2'b01: Src_A = 32'b0;               //lui
+            
+        endcase
+        case (ALUSrcB)
+            2'b00, 2'b10: Src_B = RD2;          //DP Reg, branch
+            2'b11: Src_B = ExtImm;              //DP Imm, load, store, auipc, lui
+            2'b01: Src_B = 32'd4;               //jal, jalr
+            
+        endcase
+    end
+
     // Instantiate RegFile
-    // TODO: assign WD = (MemtoReg) ? ReadData :ALUResult;
     RegFile RegFile1( 
                     CLK,
                     WE,
@@ -168,7 +206,7 @@ module RV #(
                     RegWrite,
                     MemWrite,
                     MemtoReg,
-                    //ALUSrcA,
+                    ALUSrcA,
                     ALUSrcB,
                     ImmSrc,
                     ALUControl
