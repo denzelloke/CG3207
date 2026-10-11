@@ -46,7 +46,7 @@ module MCycle
         output reg Busy // Set immediately when Start is set. Cleared when the Results become ready. This bit can be used to stall the processor while multi-cycle operations are on.
     );
     
-// use the Busy signal to reset WE_PC to 0 in RV.v (aka "freeze" PC). The two signals are complements of each other
+// TODO: use the Busy signal to reset WE_PC to 0 in RV.v (aka "freeze" PC). The two signals are complements of each other
 // since the IDLE_PROCESS is combinational, instantaneously asserts Busy once Start is asserted
 
     localparam IDLE = 1'b0 ;
@@ -54,7 +54,7 @@ module MCycle
 
     // Last value of count for each multiplication. Part-selected where they are
     // used, so the comparisons against count do not silently widen it.
-    localparam COUNT_LAST_W  = width - 1 ;    // unsigned multiply
+    localparam COUNT_LAST_W  = width - 1 ;    // unsigned multiply;    USED FOR DIV TOO???
     localparam COUNT_LAST_2W = 2*width - 1 ;  // signed multiply, whose operands are sign extended to 2*width
 
     reg state = IDLE ;
@@ -69,13 +69,26 @@ module MCycle
     // What each of the above becomes at the next edge. The computation is
     // written as a sequence of steps over these, so that the registers
     // themselves are only ever assigned with <= , in one place.
-    reg [7:0] n_count ;
-    reg n_done ;
+
+    reg [7:0] n_count ;     //used in division too               
+    reg n_done ;            //used in division too
     reg [2*width-1:0] n_temp_sum ;
     reg [2*width-1:0] n_shifted_op1 ;
     reg [2*width-1:0] n_shifted_op2 ;
     reg [width-1:0] n_Result1 ;
     reg [width-1:0] n_Result2 ;
+
+
+    // For division
+    reg [width:0] remainder = 0;
+    reg [width:0] n_remainder;
+    reg [width-1:0] dividend = 0;
+    reg [width-1:0] n_dividend;
+    reg [width-1:0] quotient = 0;
+    reg [width-1:0] n_quotient;
+    reg [width-1:0] divisor = 0;
+    reg [width-1:0] n_divisor;
+    reg sign = 1'b0;        //for signed division
 
     always@(*) begin : IDLE_PROCESS
         // default outputs
@@ -100,16 +113,24 @@ module MCycle
             endcase
     end
 
-
+    //calculates next cycle's value
     always@(*) begin : COMPUTING_PROCESS // process which does the actual computation
         // Hold, unless something below says otherwise.
-        n_count = count ;
+        n_count = count ;       //used for division too
         n_temp_sum = temp_sum ;
         n_shifted_op1 = shifted_op1 ;
         n_shifted_op2 = shifted_op2 ;
         n_Result1 = Result1 ;
         n_Result2 = Result2 ;
-        n_done = 1'b0 ;
+        n_done = 1'b0 ;         //used for division too
+        
+
+        //for division
+        n_remainder = remainder;
+        n_dividend = dividend;
+        n_quotient = quotient;
+        n_divisor = divisor;
+
 
         // n_state == COMPUTING and state == IDLE implies we are just transitioning into COMPUTING
         if( RESET | (n_state == COMPUTING & state == IDLE) ) begin // 2nd condition is true during the very 1st clock cycle of the multiplication
@@ -117,9 +138,16 @@ module MCycle
             n_temp_sum = 0 ;
             n_shifted_op1 = { {width{~MCycleOp[0] & Operand1[width-1]}}, Operand1 } ; // sign extend the operands
             n_shifted_op2 = { {width{~MCycleOp[0] & Operand2[width-1]}}, Operand2 } ;
+
+            //for division
+            n_remainder = 0;
+            n_dividend = Operand1;
+            n_quotient = 0;
+            n_divisor = Operand2;
         end
 
         // Guarded so that the cycle in which Busy falls - the one the processor uses to write the result back - does not run another iteration over it, and so that the results are held while idle.
+        // TODO: ENHANCEMENT: DO TRICK FOR SIGNED MULTIPLICATION (SLIDES 4, PG 24)
         if( n_state == COMPUTING ) begin
             if( ~MCycleOp[1] ) begin // Multiply
                 // if( ~MCycleOp[0] ), takes 2*'width' cycles to execute, returns signed(Operand1)*signed(Operand2)
@@ -135,20 +163,116 @@ module MCycle
 
                 n_count = n_count + 1 ;
             end
-            else begin // Supposed to be Divide. The dummy code below takes 1 cycle to execute, just returns the operands. Change this to signed [ if(~MCycleOp[0]) ] and unsigned [ if(MCycleOp[0]) ] division.
-                // TODO (students): replace the one-cycle division placeholder.
-                // It currently returns Operand1 in Result2 and Operand2 in Result1.
+
+            // DONE: Change this to signed [ if(~MCycleOp[0]) ] and unsigned [ if(MCycleOp[0]) ] division.
+            // TODO: Task 1: div and divu
+            else if (~MCycleOp[0]) begin   // signed division (div)
+                // need to check signs
+                if (n_count == 1'b0 && n_dividend[width-1] == 1'b1) begin
+                    n_dividend = ~n_dividend + 1'b1;
+                    sign = sign + 1'b1;
+                end
+
+                if (n_count == 1'b0 && n_divisor[width-1] == 1'b1) begin
+                    n_divisor = ~n_divisor + 1'b1;
+                    sign = sign + 1'b1;
+                end
+
+                //bring next divident bit into remainder (MSB to LSB)
+                n_remainder = {n_remainder[width-1:0], n_dividend[width-1]};
+
+                //shift divident left
+                n_dividend = {n_dividend[width-2:0], 1'b0};
+
+                //shift quotient left for next quotient bit
+                n_quotient = {n_quotient[width-2:0], 1'b0};
+
+                //proceed with division checks
+                if (n_remainder >= {1'b0, n_divisor}) begin
+                    n_remainder = n_remainder - {1'b0, n_divisor};
+
+                    n_quotient[0] = 1'b1;   //set current quotient bit to 1
+                end
+
+                else begin
+                    n_quotient[0] = 1'b0;   //set current quotient bit to 0;
+                   
+                end
+
+
+                // takes 'width' cycles to execute
+                if (n_count == COUNT_LAST_W[7:0]) begin
+                    n_done = 1'b1;
+
+                    if (sign) begin
+                        n_quotient = ~n_quotient + 1'b1;
+                        n_remainder = ~n_remainder + 1'b1;
+                    end
+                end
+
+                //store quotient and remainder tin temp
+                n_temp_sum[2*width-1:width] = n_remainder[width-1:0];   //remainder
+                n_temp_sum[width-1:0] = n_quotient;
+
+                
+
+                n_count = n_count + 1;
+            end
+
+            else if (MCycleOp[0]) begin   // unsigned division (divu)
+                //just take binary at face value and perform division, dont need to check signs
+
+                //bring next divident bit into remainder (MSB to LSB)
+                n_remainder = {n_remainder[width-1:0], n_dividend[width-1]};
+
+                //shift divident left
+                n_dividend = {n_dividend[width-2:0], 1'b0};
+
+                //shift quotient left for next quotient bit
+                n_quotient = {n_quotient[width-2:0], 1'b0};
+
+                //proceed with division checks
+                if (n_remainder >= {1'b0, n_divisor}) begin
+                    n_remainder = n_remainder - {1'b0, n_divisor};
+
+                    n_quotient[0] = 1'b1;   //set current quotient bit to 1
+                end
+
+                else begin
+                    n_quotient[0] = 1'b0;   //set current quotient bit to 0;
+                   
+                end
+
+                //used to keep format standardised
+                n_divisor = divisor;
+
+                //store quotient and remainder tin temp
+                n_temp_sum[2*width-1:width] = n_remainder[width-1:0];   //remainder
+                n_temp_sum[width-1:0] = n_quotient;
+
+                // takes 'width' cycles to execute
+                if (n_count == COUNT_LAST_W[7:0]) begin
+                    n_done = 1'b1;
+                end
+
+                n_count = n_count + 1;
+
+            end
+            
+            //The dummy code below takes 1 cycle to execute, just returns the operands. 
+            else begin 
+                //returns Operand1 in Result2 and Operand2 in Result1.
                 n_temp_sum[2*width-1 : width] = Operand1 ;
                 n_temp_sum[width-1 : 0] = Operand2 ;
                 n_done = 1'b1 ;
             end
 
-            n_Result2 = n_temp_sum[2*width-1 : width] ;
-            n_Result1 = n_temp_sum[width-1 : 0] ;
+            n_Result2 = n_temp_sum[2*width-1 : width] ;     //remainder
+            n_Result1 = n_temp_sum[width-1 : 0] ;           //quotient
         end
     end
-
-
+ 
+    //clocked block, stores the next cycle's value
     always@( posedge CLK ) begin : STATE_UPDATE_PROCESS // the only place any of this is registered
         state <= n_state ;
         count <= n_count ;
@@ -158,6 +282,13 @@ module MCycle
         shifted_op2 <= n_shifted_op2 ;
         Result1 <= n_Result1 ;
         Result2 <= n_Result2 ;
+
+        //for division
+        dividend <= n_dividend;
+        quotient <= n_quotient;
+        divisor <= n_divisor;
+        remainder <= n_remainder;
+
     end
 
 endmodule
