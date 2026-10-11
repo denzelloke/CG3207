@@ -173,6 +173,9 @@ module RV #(
     endcase
   end
 
+  wire start;
+  
+
   RegFile RegFile1 (
       CLK,
       WE,
@@ -228,4 +231,18 @@ module RV #(
       PC_IN,
       PC
   );
+
+  Mcycle Mcycle1 (
+      CLK,
+      RESET, 
+      Start,
+      MCycleOp, 
+      [width-1:0] Operand1, 
+      [width-1:0] Operand2, 
+      [width-1:0] Result1, 
+      [width-1:0] Result2, 
+      Busy
+    );
+  )
+
 endmodule

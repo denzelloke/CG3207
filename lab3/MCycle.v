@@ -77,6 +77,12 @@ module MCycle
     reg [width-1:0] n_Result1 ;
     reg [width-1:0] n_Result2 ;
 
+    //divide reg
+    reg [width:0] trial_remainder; 
+    reg [width-1:0] quotient_work;
+    reg [width-1:0] div_operand1, div_operand2;
+
+
     always@(*) begin : IDLE_PROCESS
         // default outputs
         Busy = 1'b0 ;
@@ -110,6 +116,18 @@ module MCycle
         n_Result1 = Result1 ;
         n_Result2 = Result2 ;
         n_done = 1'b0 ;
+        trial_remainder = 0;
+        quotient_work = 0;
+        div_operand1 = Operand1;
+        div_operand2 = Operand2;
+
+        if (MCycleOp == 2'b10) begin //signed div, change sign if needed
+            if (Operand1[width-1])
+                div_operand1 = ~Operand1 + 1'b1;
+
+            if (Operand2[width-1])
+                div_operand2 = ~Operand2 + 1'b1;
+        end
 
         // n_state == COMPUTING and state == IDLE implies we are just transitioning into COMPUTING
         if( RESET | (n_state == COMPUTING & state == IDLE) ) begin // 2nd condition is true during the very 1st clock cycle of the multiplication
@@ -117,6 +135,12 @@ module MCycle
             n_temp_sum = 0 ;
             n_shifted_op1 = { {width{~MCycleOp[0] & Operand1[width-1]}}, Operand1 } ; // sign extend the operands
             n_shifted_op2 = { {width{~MCycleOp[0] & Operand2[width-1]}}, Operand2 } ;
+
+            //for div
+            if (MCycleOp[1]) begin
+                n_temp_sum = {{width{1'b0}}, div_operand1};
+                n_shifted_op2 = {{width{1'b0}}, div_operand2};
+            end
         end
 
         // Guarded so that the cycle in which Busy falls - the one the processor uses to write the result back - does not run another iteration over it, and so that the results are held while idle.
@@ -127,7 +151,7 @@ module MCycle
                 if( n_shifted_op2[0] ) // add only if b0 = 1
                     n_temp_sum = n_temp_sum + n_shifted_op1 ; // partial product for multiplication
 
-                n_shifted_op2 = {1'b0, n_shifted_op2[2*width-1 : 1]} ;
+                n_shifted_op2 = {1'b0, n_shifted_op2[2*width-1 : 1]} ; 
                 n_shifted_op1 = {n_shifted_op1[2*width-2 : 0], 1'b0} ;
 
                 if( (MCycleOp[0] & n_count == COUNT_LAST_W[7:0]) | (~MCycleOp[0] & n_count == COUNT_LAST_2W[7:0]) ) // last cycle?
@@ -136,11 +160,34 @@ module MCycle
                 n_count = n_count + 1 ;
             end
             else begin // Supposed to be Divide. The dummy code below takes 1 cycle to execute, just returns the operands. Change this to signed [ if(~MCycleOp[0]) ] and unsigned [ if(MCycleOp[0]) ] division.
-                // TODO (students): replace the one-cycle division placeholder.
-                // It currently returns Operand1 in Result2 and Operand2 in Result1.
-                n_temp_sum[2*width-1 : width] = Operand1 ;
-                n_temp_sum[width-1 : 0] = Operand2 ;
-                n_done = 1'b1 ;
+                // remainder[4 bits], put the highest bit inside as the lowest
+                trial_remainder = {n_temp_sum[2*width-1:width], n_temp_sum[width-1]}; 
+
+                quotient_work = n_temp_sum[width-1:0] << 1; //shift by 1 to remove the highest bit that is already in trial_remainder
+
+                //subtract divisor
+                trial_remainder = trial_remainder - {1'b0, n_shifted_op2[width-1:0]};
+
+                if(trial_remainder[width]) begin
+                    //neagtive number -- add back remainder
+                    trial_remainder = trial_remainder + {1'b0, n_shifted_op2[width-1:0]};
+                end else begin //can divide
+                    quotient_work[0] = 1'b1;
+                end
+
+                n_temp_sum = {trial_remainder[width-1:0], quotient_work};
+
+                if (n_count == COUNT_LAST_W[7:0])
+                    if (MCycleOp == 2'b10) begin //for sig div, check if need revert the results
+                        if (Operand1[width-1] ^ Operand2[wdith-1])
+                            n_temp_sum[width-1:0] = ~n_temp_sum[width-1:0] + 1'b1;
+                        if (Operand1[width-1])
+                            n_temp_sum[2*width-1:width] = ~n_temp_sum[2*width-1:width] + 1'b1;
+                    end
+
+                    n_done = 1'b1;
+
+                n_count = n_count + 1 ;
             end
 
             n_Result2 = n_temp_sum[2*width-1 : width] ;
