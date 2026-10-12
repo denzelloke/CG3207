@@ -54,6 +54,8 @@ module MCycle
     // used, so the comparisons against count do not silently widen it.
     localparam COUNT_LAST_W  = width - 1 ;    // unsigned multiply
     localparam COUNT_LAST_2W = 2*width - 1 ;  // signed multiply, whose operands are sign extended to 2*width
+    localparam BOOTH_Q_WIDTH = 2 * ((width + 2) / 2);
+    localparam BOOTH_STEPS   = BOOTH_Q_WIDTH / 2;
 
     reg state = IDLE ;
     reg n_state = IDLE ;
@@ -76,7 +78,7 @@ module MCycle
     //booth Multi
     reg signed [2*width:0] A, n_A;
     reg signed [2*width:0] M, n_M;
-    reg signed [width:0]   Q, n_Q;
+    reg signed [BOOTH_Q_WIDTH-1:0] Q, n_Q;
     reg                    Q_previous_bit, n_Q_previous_bit;
 
     reg signed [2*width:0] booth_addend;
@@ -123,6 +125,8 @@ module MCycle
         n_M = M;
         n_Q = Q;
         n_Q_previous_bit = Q_previous_bit;
+        booth_addend = 0;
+        booth_bits = 3'b000;
 
         trial_remainder = 0;
         quotient_work = 0;
@@ -147,12 +151,14 @@ module MCycle
 
             // Sign-extend or zero-extend multiplicand
             if (MCycleOp == 2'b00) begin
+                // Signed multiplication: sign-extend both operands.
                 n_M = {{(width+1){Operand1[width-1]}}, Operand1};
-                n_Q = {Operand2[width-1], Operand2};
+                n_Q = {{(BOOTH_Q_WIDTH-width){Operand2[width-1]}}, Operand2};
             end
             else begin
+                // Unsigned multiplication: zero-extend both operands.
                 n_M = {{(width+1){1'b0}}, Operand1};
-                n_Q = {1'b0, Operand2};
+                n_Q = {{(BOOTH_Q_WIDTH-width){1'b0}}, Operand2};
             end
 
             n_Q_previous_bit = 1'b0;
@@ -182,13 +188,15 @@ module MCycle
 
                 // Arithmetic shift of the combined {A, Q, Q-1} register by 2 bits
                 n_Q_previous_bit = Q[1];
-                n_Q = {n_A[1:0], Q[width:2]};
+                n_Q = {n_A[1:0], Q[BOOTH_Q_WIDTH-1:2]};
                 n_A = n_A >>> 2;
 
-                if (count == ((width + 1) / 2 - 1)) begin
+                if (count == BOOTH_STEPS - 1) begin
                     n_done = 1'b1;
-                    n_Result1 = n_Q[width-1:0];
-                    n_Result2 = n_A[width-1:0];
+
+                    n_temp_sum = {n_A, n_Q};
+                    n_Result1 = n_temp_sum[width-1:0];
+                    n_Result2 = n_temp_sum[2*width-1:width];
                 end
             end
 
