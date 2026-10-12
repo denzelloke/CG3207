@@ -88,7 +88,11 @@ module MCycle
     reg [width-1:0] n_quotient;
     reg [width-1:0] divisor = 0;
     reg [width-1:0] n_divisor;
-    reg sign = 1'b0;        //for signed division
+    //for signed division
+    reg dividend_sign = 1'b0;
+    reg n_dividend_sign;   
+    reg divisor_sign = 1'b0;
+    reg n_divisor_sign;
 
     always@(*) begin : IDLE_PROCESS
         // default outputs
@@ -131,6 +135,10 @@ module MCycle
         n_quotient = quotient;
         n_divisor = divisor;
 
+        //for signed division
+        n_dividend_sign = dividend_sign;
+        n_divisor_sign = divisor_sign;
+
 
         // n_state == COMPUTING and state == IDLE implies we are just transitioning into COMPUTING
         if( RESET | (n_state == COMPUTING & state == IDLE) ) begin // 2nd condition is true during the very 1st clock cycle of the multiplication
@@ -144,6 +152,11 @@ module MCycle
             n_dividend = Operand1;
             n_quotient = 0;
             n_divisor = Operand2;
+
+            //for signed division
+            n_dividend_sign = Operand1[width-1];
+            n_divisor_sign = Operand2[width-1];
+
         end
 
         // Guarded so that the cycle in which Busy falls - the one the processor uses to write the result back - does not run another iteration over it, and so that the results are held while idle.
@@ -168,14 +181,12 @@ module MCycle
             // TODO: Task 1: div and divu
             else if (~MCycleOp[0]) begin   // signed division (div)
                 // need to check signs
-                if (n_count == 1'b0 && n_dividend[width-1] == 1'b1) begin
+                if (n_count == 1'b0 && n_dividend_sign) begin
                     n_dividend = ~n_dividend + 1'b1;
-                    sign = sign + 1'b1;
                 end
 
-                if (n_count == 1'b0 && n_divisor[width-1] == 1'b1) begin
+                if (n_count == 1'b0 && n_divisor_sign) begin
                     n_divisor = ~n_divisor + 1'b1;
-                    sign = sign + 1'b1;
                 end
 
                 //bring next divident bit into remainder (MSB to LSB)
@@ -204,17 +215,24 @@ module MCycle
                 if (n_count == COUNT_LAST_W[7:0]) begin
                     n_done = 1'b1;
 
-                    if (sign) begin
-                        n_quotient = ~n_quotient + 1'b1;
+                    if (dividend_sign && divisor_sign) begin     //only remainder negative
                         n_remainder = ~n_remainder + 1'b1;
                     end
+
+                    else if (dividend_sign) begin               //both will be negative
+                        n_quotient = ~n_quotient + 1'b1;       
+                        n_remainder = ~n_remainder + 1'b1;
+                    end
+
+                    else if (divisor_sign) begin                //only quotient negative     
+                        n_quotient = ~n_quotient + 1'b1;
+                    end
+                    
                 end
 
                 //store quotient and remainder tin temp
                 n_temp_sum[2*width-1:width] = n_remainder[width-1:0];   //remainder
                 n_temp_sum[width-1:0] = n_quotient;
-
-                
 
                 n_count = n_count + 1;
             end
@@ -242,9 +260,6 @@ module MCycle
                     n_quotient[0] = 1'b0;   //set current quotient bit to 0;
                    
                 end
-
-                //used to keep format standardised
-                n_divisor = divisor;
 
                 //store quotient and remainder tin temp
                 n_temp_sum[2*width-1:width] = n_remainder[width-1:0];   //remainder
@@ -288,6 +303,10 @@ module MCycle
         quotient <= n_quotient;
         divisor <= n_divisor;
         remainder <= n_remainder;
+
+        //for signed division
+        dividend_sign <= n_dividend_sign;
+        divisor_sign <= n_divisor_sign;
 
     end
 
