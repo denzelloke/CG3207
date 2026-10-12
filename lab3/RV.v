@@ -232,17 +232,17 @@ module RV #(
       PC
   );
 
-  Mcycle Mcycle1 (
-      CLK,
-      RESET, 
-      Start,
-      MCycleOp, 
-      [width-1:0] Operand1, 
-      [width-1:0] Operand2, 
-      [width-1:0] Result1, 
-      [width-1:0] Result2, 
-      Busy
-    );
-  )
+//  Mcycle Mcycle1 (
+//      CLK,
+//      RESET, 
+//      Start,
+//      MCycleOp, 
+//      [width-1:0] Operand1, 
+//      [width-1:0] Operand2, 
+//      [width-1:0] Result1, 
+//      [width-1:0] Result2, 
+//      Busy
+//    );
+
 
 endmodule

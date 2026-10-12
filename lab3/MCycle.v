@@ -157,7 +157,6 @@ module MCycle
                 if( (MCycleOp[0] & n_count == COUNT_LAST_W[7:0]) | (~MCycleOp[0] & n_count == COUNT_LAST_2W[7:0]) ) // last cycle?
                     n_done = 1'b1 ;
 
-                n_count = n_count + 1 ;
             end
             else begin // Supposed to be Divide. The dummy code below takes 1 cycle to execute, just returns the operands. Change this to signed [ if(~MCycleOp[0]) ] and unsigned [ if(MCycleOp[0]) ] division.
                 // remainder[4 bits], put the highest bit inside as the lowest
@@ -177,19 +176,25 @@ module MCycle
 
                 n_temp_sum = {trial_remainder[width-1:0], quotient_work};
 
-                if (n_count == COUNT_LAST_W[7:0])
-                    if (MCycleOp == 2'b10) begin //for sig div, check if need revert the results
-                        if (Operand1[width-1] ^ Operand2[wdith-1])
-                            n_temp_sum[width-1:0] = ~n_temp_sum[width-1:0] + 1'b1;
+                if (n_count == COUNT_LAST_W[7:0]) begin
+                    if (MCycleOp == 2'b10) begin
+                        // Correct quotient sign.
+                        if (Operand1[width-1] ^ Operand2[width-1])
+                            n_temp_sum[width-1:0] =
+                                ~n_temp_sum[width-1:0] + 1'b1;
+                
+                        // Correct remainder sign.
                         if (Operand1[width-1])
-                            n_temp_sum[2*width-1:width] = ~n_temp_sum[2*width-1:width] + 1'b1;
+                            n_temp_sum[2*width-1:width] =
+                                ~n_temp_sum[2*width-1:width] + 1'b1;
                     end
-
+                
                     n_done = 1'b1;
+                end
 
-                n_count = n_count + 1 ;
+                
             end
-
+            n_count = n_count + 1 ;
             n_Result2 = n_temp_sum[2*width-1 : width] ;
             n_Result1 = n_temp_sum[width-1 : 0] ;
         end
