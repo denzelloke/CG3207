@@ -32,209 +32,200 @@
 ----------------------------------------------------------------------------------
 */
 
-// Change wire to reg if assigned inside a procedural (always) block. However, where it is easy enough, use assign instead of always.
-// A 2-1 multiplexing can be done easily using an assign with a ternary operator
-// For multiplexing with number of inputs > 2, a case construct within an always block is a natural fit. DO NOT to use nested ternary assignment operator as it hampers the readability of your code.
-
-
 module RV #(
     parameter PC_INIT = 32'h00400000
-)(
+) (
     input CLK,
     input RESET,
     //input Interrupt,      // for optional future use.
     input [31:0] Instr,
-    input [31:0] ReadData_in,       // Name mangled to support lb/lbu/lh/lhu
+    input [31:0] ReadData_in,  // Name mangled to support lb/lbu/lh/lhu
     output MemRead,
-    output [3:0] MemWrite_out,		// Column-wise write enable to support sb/sw. Each column is a byte.
+    output [3:0] MemWrite_out,  // Column-wise write enable to support sb/sw. Each column is a byte.
     output [31:0] PC,
     output [31:0] ALUResult,
-    output [31:0] WriteData_out		// Name mangled to support sb/sw
+    output [31:0] WriteData_out  // Name mangled to support sb/sw
 );
-    
-    // Please read Lab 4 Enhancement: Implementing additional instructions on how to support lb/lbu/lh/lhu/sb/sh
-        
-    //RV Signals
-    wire [2:0] SizeSel;     //to support lb/lbu/lh/lhu/sb/sh
-    wire [31:0] ReadData;
-    wire [31:0] WriteData;
-    wire MemWrite;
 
-    // The signals that are commented out (except CLK) will need to be uncommented and attached a stage suffix for pipelining,
-    //  except if the connection is within the same stage.
+  // Please read Lab 4 Enhancement: Implementing additional instructions on how to support lb/lbu/lh/lhu/sb/sh
 
-    // RegFile signals
-    //wire CLK ;    //duplicate
-    wire WE ;
-    wire [4:0] rs1 ;
-    wire [4:0] rs2 ;
-    wire [4:0] rd ;
-    wire [31:0] WD ;
-    wire [31:0] R15 ;
-    wire [31:0] RD1 ;
-    wire [31:0] RD2 ;
+  //RV Signals
+  wire [ 2:0] SizeSel;  //to support lb/lbu/lh/lhu/sb/sh
+  wire [31:0] ReadData;
+  wire [31:0] WriteData;
+  wire        MemWrite;
 
-    // Extend Module signals
-    wire [2:0] ImmSrc ;
-    wire [24:0] InstrImm ;
-    wire [31:0] ExtImm ;
+  // The signals that are commented out (except CLK) will need to be uncommented and attached a stage suffix for pipelining,
+  //  except if the connection is within the same stage.
 
-    // Decoder signals
-    wire [6:0] Opcode ;
-    wire [2:0] Funct3 ;
-    wire [6:0] Funct7 ;
-    wire [1:0] PCS ;
-    wire RegWrite ;
-    //wire MemWrite ;         //duplicate
-    wire MemtoReg ;
-    wire [1:0] ALUSrcA ;
-    wire [1:0]ALUSrcB ;
-    //wire [2:0] ImmSrc ;       //duplicate
-    wire [3:0] ALUControl ;
+  // RegFile signals
+  //wire CLK ;    //duplicate
+  wire        WE;
+  wire [ 4:0] rs1;
+  wire [ 4:0] rs2;
+  wire [ 4:0] rd;
+  wire [31:0] WD;
+  wire [31:0] R15;
+  wire [31:0] RD1;
+  wire [31:0] RD2;
 
-    // PC_Logic signals
-    //wire [1:0] PCS;           //duplicate
-    //wire [2:0] Funct3;        //duplicate
-    wire [2:0] ALUFlags;
-    wire [1:0] PCSrc;
-    
-    // ALU signals
-    reg [31:0] Src_A ;
-    reg [31:0] Src_B ;
-    //wire [3:0] ALUControl ;       //duplicate
-    //wire [31:0] ALUResult ;       //duplicate
-    //wire [2:0] ALUFlags ;         //duplicate
+  // Extend Module signals
+  wire [ 2:0] ImmSrc;
+  wire [24:0] InstrImm;
+  wire [31:0] ExtImm;
 
-    // ProgramCounter signals
-    //wire CLK ;            //duplicate
-    // wire RESET ;         //duplicate
-    wire WE_PC ;                //used below for multi-cycle ops and pipelining with hazard hardware
-    reg [31:0] PC_IN ;
-    //wire [31:0] PC ;      //duplicate 
+  // Decoder signals
+  wire [ 6:0] Opcode;
+  wire [ 2:0] Funct3;
+  wire [ 6:0] Funct7;
+  wire [ 1:0] PCS;
+  wire        RegWrite;
+  //wire MemWrite ;         //duplicate
+  wire        MemtoReg;
+  wire [ 1:0] ALUSrcA;
+  wire [ 1:0] ALUSrcB;
+  //wire [2:0] ImmSrc ;       //duplicate
+  wire [ 3:0] ALUControl;
 
-    // Other internal signals here
-    wire [31:0] PC_Offset ;     //used for PCSrc[0] mux
-    wire [31:0] PC_Target ;     //used when assigning PC_IN 
-    wire [31:0] PCSrc_B ;       //used for PCSrc[1] mux
-    
-    assign MemRead = MemtoReg; // This is needed for the proper functionality of some devices such as UART CONSOLE
-    assign WE_PC = 1 ;  // Will need to control it for multi-cycle operations (Multiplication, Division) and/or Pipelining with hazard hardware.
+  // PC_Logic signals
+  //wire [1:0] PCS;           //duplicate
+  //wire [2:0] Funct3;        //duplicate
+  wire [ 2:0] ALUFlags;
+  wire [ 1:0] PCSrc;
 
-    assign ReadData = ReadData_in;       // Change datapath as appropriate if supporting lb/lbu/lh/lhu
-    assign WriteData_out = WriteData;    // Change datapath as appropriate if supporting sb/sh
-    assign MemWrite_out = {4{MemWrite}}; // Change datapath as appropriate if supporting sb/sh
-    assign SizeSel = 3'b010;             // Change this to be generated by the Decoder (control) as appropriate if 
-                                         // supporting lb/sb/lbu/lh/sh/lhu/lw/sw. Hint: funct3
+  // ALU signals
+  reg  [31:0] Src_A;
+  reg  [31:0] Src_B;
+  //wire [3:0] ALUControl ;       //duplicate
+  //wire [31:0] ALUResult ;       //duplicate
+  //wire [2:0] ALUFlags ;         //duplicate
 
-    // todo: other datapath connections here
+  // ProgramCounter signals
+  //wire CLK ;            //duplicate
+  // wire RESET ;         //duplicate
+  wire        WE_PC;  //used below for multi-cycle ops and pipelining with hazard hardware
+  reg  [31:0] PC_IN;
+  //wire [31:0] PC ;      //duplicate 
 
-    // case: instr==lw --> shove ExtImm & RD1 into ALU
+  // Other internal signals here
+  wire [31:0] PC_Offset;  //used for PCSrc[0] mux
+  wire [31:0] PC_Target;  //used when assigning PC_IN 
+  wire [31:0] PCSrc_B;  //used for PCSrc[1] mux
 
-    // Feed Instr into RegFile
-    assign rs1 = Instr[19:15] ;
-    assign rs2 = Instr[24:20] ;
-    assign rd = Instr[11:7] ;
-    // Feed Instr into InstrImm
-    assign InstrImm = Instr[31:7] ;
-    // Feed Instr into decoder
-    assign Funct3 = Instr[14:12] ;
-    assign Opcode = Instr[6:0] ;
-    assign Funct7 = Instr[31:25] ;
+  assign MemRead = MemtoReg; // This is needed for the proper functionality of some devices such as UART CONSOLE
+  assign WE_PC = 1 ;  // Will need to control it for multi-cycle operations (Multiplication, Division) and/or Pipelining with hazard hardware.
 
-    //added MemtoReg function to select between ALUResult and ReadData for Result
-    assign WD = (MemtoReg) ? ReadData : ALUResult;
-    
-    //assign WE for RegFile
-    assign WE = RegWrite;
-    
-    //assign WriteData for RegFile
-    assign WriteData = RD2;
-    
-    
-    always @ (*) begin
-        case (PCSrc)
-            2'b00: PC_IN = PC + 32'd4; //non-control
-            2'b01: PC_IN = PC + ExtImm; //jal
-            2'b11: PC_IN = (RD1 + ExtImm) & ~32'd1; //jalr
-            default: PC_IN = PC + 32'd4; //default case
-        endcase
-    end
-    
-    // ALU operations
-    always @ (*) begin
-        Src_A = RD1;              //default case
-        Src_B = RD2;              //default case
-        case (ALUSrcA)
-            2'b00, 2'b10: Src_A = RD1;          //DP Reg, DP Imm, load, store, branch
-            2'b11: Src_A = PC;                  //jal, auipc, jalr
-            2'b01: Src_A = 32'b0;               //lui
-            
-        endcase
-        case (ALUSrcB)
-            2'b00, 2'b10: Src_B = RD2;          //DP Reg, branch
-            2'b11: Src_B = ExtImm;              //DP Imm, load, store, auipc, lui
-            2'b01: Src_B = 32'd4;               //jal, jalr
-            
-        endcase
-    end
+  assign ReadData = ReadData_in;  // Change datapath as appropriate if supporting lb/lbu/lh/lhu
+  assign WriteData_out = WriteData;  // Change datapath as appropriate if supporting sb/sh
+  assign MemWrite_out = {4{MemWrite}};  // Change datapath as appropriate if supporting sb/sh
+  assign SizeSel = 3'b010;             // Change this to be generated by the Decoder (control) as appropriate if 
+                                       // supporting lb/sb/lbu/lh/sh/lhu/lw/sw. Hint: funct3
 
-    // Instantiate RegFile
-    RegFile RegFile1( 
-                    CLK,
-                    WE,
-                    rs1,
-                    rs2,
-                    rd,
-                    WD,
-                    RD1,
-                    RD2     
-                );
-                
-     // Instantiate Extend Module
-    Extend Extend1(
-                    ImmSrc,
-                    InstrImm,
-                    ExtImm
-                );
-                
-    // Instantiate Decoder
-    Decoder Decoder1(
-                    Opcode,
-                    Funct3,
-                    Funct7,
-                    PCS,
-                    RegWrite,
-                    MemWrite,
-                    MemtoReg,
-                    ALUSrcA,
-                    ALUSrcB,
-                    ImmSrc,
-                    ALUControl
-                );
-                
-    // Instantiate PC_Logic
-	PC_Logic PC_Logic1(
-                    PCS,
-                    Funct3,
-                    ALUFlags,
-                    PCSrc
-		);
-                
-    // Instantiate ALU        
-    ALU ALU1(
-                    Src_A,
-                    Src_B,
-                    ALUControl,
-                    ALUResult,
-                    ALUFlags
-                );                
-    
-    // Instantiate ProgramCounter    
-    ProgramCounter #(.PC_INIT(PC_INIT)) ProgramCounter1(
-                    CLK,
-                    RESET,
-                    WE_PC,    
-                    PC_IN,
-                    PC  
-                );                         
+  // todo: other datapath connections here
+
+  // case: instr==lw --> shove ExtImm & RD1 into ALU
+
+  // Feed Instr into RegFile
+  assign rs1 = Instr[19:15];
+  assign rs2 = Instr[24:20];
+  assign rd = Instr[11:7];
+  // Feed Instr into InstrImm
+  assign InstrImm = Instr[31:7];
+  // Feed Instr into decoder
+  assign Funct3 = Instr[14:12];
+  assign Opcode = Instr[6:0];
+  assign Funct7 = Instr[31:25];
+
+  //added MemtoReg function to select between ALUResult and ReadData for Result
+  assign WD = (MemtoReg) ? ReadData : ALUResult;
+
+  //assign WE for RegFile
+  assign WE = RegWrite;
+
+  //assign WriteData for RegFile
+  assign WriteData = RD2;
+
+
+  always @(*) begin
+    case (PCSrc)
+      2'b00:   PC_IN = PC + 32'd4;  //non-control
+      2'b01:   PC_IN = PC + ExtImm;  //jal
+      2'b11:   PC_IN = (RD1 + ExtImm) & ~32'd1;  //jalr
+      default: PC_IN = PC + 32'd4;  //default case
+    endcase
+  end
+
+  // ALU operations
+  always @(*) begin
+    Src_A = RD1;  //default case
+    Src_B = RD2;  //default case
+    case (ALUSrcA)
+      2'b00, 2'b10: Src_A = RD1;  //DP Reg, DP Imm, load, store, branch
+      2'b11:        Src_A = PC;  //jal, auipc, jalr
+      2'b01:        Src_A = 32'b0;  //lui
+
+    endcase
+    case (ALUSrcB)
+      2'b00, 2'b10: Src_B = RD2;  //DP Reg, branch
+      2'b11:        Src_B = ExtImm;  //DP Imm, load, store, auipc, lui
+      2'b01:        Src_B = 32'd4;  //jal, jalr
+
+    endcase
+  end
+
+  RegFile RegFile1 (
+      CLK,
+      WE,
+      rs1,
+      rs2,
+      rd,
+      WD,
+      RD1,
+      RD2
+  );
+
+  Extend Extend1 (
+      ImmSrc,
+      InstrImm,
+      ExtImm
+  );
+
+  Decoder Decoder1 (
+      Opcode,
+      Funct3,
+      Funct7,
+      PCS,
+      RegWrite,
+      MemWrite,
+      MemtoReg,
+      ALUSrcA,
+      ALUSrcB,
+      ImmSrc,
+      ALUControl
+  );
+
+  PC_Logic PC_Logic1 (
+      PCS,
+      Funct3,
+      ALUFlags,
+      PCSrc
+  );
+
+  ALU ALU1 (
+      Src_A,
+      Src_B,
+      ALUControl,
+      ALUResult,
+      ALUFlags
+  );
+
+  ProgramCounter #(
+      .PC_INIT(PC_INIT)
+  ) ProgramCounter1 (
+      CLK,
+      RESET,
+      WE_PC,
+      PC_IN,
+      PC
+  );
 endmodule
