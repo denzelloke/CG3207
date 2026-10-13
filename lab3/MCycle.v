@@ -33,7 +33,7 @@
 
 module MCycle
 
-    #(parameter width = 4) // Keep this at 4 to verify your algorithms with 4 bit numbers (easier). When using MCycle as a component in RV, generic map it to 32.
+    #(parameter width = 32) // Keep this at 4 to verify your algorithms with 4 bit numbers (easier). When using MCycle as a component in RV, generic map it to 32.
     (
         input CLK,
         input RESET, // Connect this to the reset of the RV processor.
@@ -54,7 +54,7 @@ module MCycle
 
     // Last value of count for each multiplication. Part-selected where they are
     // used, so the comparisons against count do not silently widen it.
-    localparam COUNT_LAST_W  = width - 1 ;    // unsigned multiply;    USED FOR DIV TOO???
+    localparam COUNT_LAST_W  = width - 1 ;    // unsigned multiply
     localparam COUNT_LAST_2W = 2*width - 1 ;  // signed multiply, whose operands are sign extended to 2*width
 
     reg state = IDLE ;
@@ -178,7 +178,7 @@ module MCycle
             end
 
             // DONE: Change this to signed [ if(~MCycleOp[0]) ] and unsigned [ if(MCycleOp[0]) ] division.
-            // TODO: Task 1: div and divu
+            // DONE: Task 1: div and divu
             else if (~MCycleOp[0]) begin   // signed division (div)
                 // need to check signs
                 if (n_count == 1'b0 && n_dividend_sign) begin

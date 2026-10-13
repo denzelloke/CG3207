@@ -64,7 +64,7 @@ module RV #(
   wire [ 4:0] rs1;
   wire [ 4:0] rs2;
   wire [ 4:0] rd;
-  wire [31:0] WD;
+  reg [31:0] WD;      //changed to reg since it is in an always block now
   wire [31:0] R15;
   wire [31:0] RD1;
   wire [31:0] RD2;
@@ -80,12 +80,22 @@ module RV #(
   wire [ 6:0] Funct7;
   wire [ 1:0] PCS;
   wire        RegWrite;
-  //wire MemWrite ;         //duplicate
+  //wire MemWrite ;           //duplicate
   wire        MemtoReg;
   wire [ 1:0] ALUSrcA;
   wire [ 1:0] ALUSrcB;
   //wire [2:0] ImmSrc ;       //duplicate
   wire [ 3:0] ALUControl;
+  
+  //for MCycle
+  wire MCycleStart;
+  wire [1:0] MCycleOp;
+  wire MCycleInstr;
+  wire MCycleBusy;
+  wire [31:0] MCycleOperand1;
+  wire [31:0] MCycleOperand2;
+  wire [31:0] MCycleResult1;
+  wire [31:0] MCycleResult2;
 
   // PC_Logic signals
   //wire [1:0] PCS;           //duplicate
@@ -113,7 +123,8 @@ module RV #(
   wire [31:0] PCSrc_B;  //used for PCSrc[1] mux
 
   assign MemRead = MemtoReg; // This is needed for the proper functionality of some devices such as UART CONSOLE
-  assign WE_PC = 1 ;  // Will need to control it for multi-cycle operations (Multiplication, Division) and/or Pipelining with hazard hardware.
+  //TODO:
+  assign WE_PC = ~MCycleBusy ;  // Will need to control it for multi-cycle operations (Multiplication, Division) and/or Pipelining with hazard hardware.
 
   assign ReadData = ReadData_in;  // Change datapath as appropriate if supporting lb/lbu/lh/lhu
   assign WriteData_out = WriteData;  // Change datapath as appropriate if supporting sb/sh
@@ -136,14 +147,28 @@ module RV #(
   assign Opcode = Instr[6:0];
   assign Funct7 = Instr[31:25];
 
-  //added MemtoReg function to select between ALUResult and ReadData for Result
-  assign WD = (MemtoReg) ? ReadData : ALUResult;
+  //assigns WD in regfile - from Data Memory, ALUResult or MCycle
+  always @ (*) begin
+    if (MemtoReg) begin
+      WD = ReadData;
+    end
+    else if (MCycleInstr) begin
+      WD = MCycleResult1;
+    end
+    else begin
+      WD = ALUResult;
+    end
+  end
 
   //assign WE for RegFile
-  assign WE = RegWrite;
+  assign WE = RegWrite && ~MCycleBusy;
 
   //assign WriteData for RegFile
   assign WriteData = RD2;
+
+  //assign Operands for MCycle module
+  assign MCycleOperand1 = RD1;
+  assign MCycleOperand2 = RD2;
 
 
   always @(*) begin
@@ -201,7 +226,10 @@ module RV #(
       ALUSrcA,
       ALUSrcB,
       ImmSrc,
-      ALUControl
+      ALUControl,
+      MCycleStart,
+      MCycleOp,
+      MCycleInstr
   );
 
   PC_Logic PC_Logic1 (
@@ -227,5 +255,19 @@ module RV #(
       WE_PC,
       PC_IN,
       PC
+  );
+
+  MCycle #(
+      .width(32)
+  ) MCycle1 (
+      CLK,
+      RESET,
+      MCycleStart,      //from decoder
+      MCycleOp,         //from decoder
+      MCycleOperand1,
+      MCycleOperand2,
+      MCycleResult1,
+      MCycleResult2,
+      MCycleBusy
   );
 endmodule
