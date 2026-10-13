@@ -201,6 +201,7 @@ module MCycle
             end
 
             else begin
+
                 // remainder[4 bits], put the highest bit inside as the lowest
                 trial_remainder = {n_temp_sum[2*width-1:width], n_temp_sum[width-1]}; 
 

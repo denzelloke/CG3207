@@ -142,7 +142,7 @@ module RV #(
 
   //assign WE for RegFile 
   //stall in case of MCycle
-  assign WE = RegWrite & ~Busy;
+  assign WE = RegWrite && ~Busy;
 
   //assign WriteData for RegFile
   assign WriteData = RD2;
