@@ -159,15 +159,15 @@ module MCycle #(
 
 
             // DIVIDE
-            else begin // Change this to signed [ if(~MCycleOp[0]) ] and unsigned [ if(MCycleOp[0]) ] division.
+            else begin
 
                 // legend:
                 // n_shifted_op1[2*width-1 : width] = working dividend
-                // n_shifted_op1[width-1 : 0] = unused dividend
-                // n_shifted_op2 = divisor (zero extended at the front)
-                // n_Result1 = quotient
-                // n_temp_sum[width : 0] = working remainder (zero extended by 1)
-                // n_Result2 = remainder
+                // n_shifted_op1[width-1 : 0]       = unused dividend
+                // n_shifted_op2                    = divisor
+                // n_temp_sum[width : 0]            = working dividend - divisor
+                // n_Result1                        = quotient
+                // n_Result2                        = remainder
 
                 // bring new digit down to working divisor
                 n_shifted_op1 = {n_shifted_op1[2*width-2 : 0], 1'b0};

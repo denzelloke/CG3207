@@ -160,9 +160,7 @@ module RV #(
 
         else MCycle_res = Result2;  // hsw / remainder
     end
-
-
-    // instantiate multicycle
+    
     MCycle MCycle1 (
         CLK,
         RESET,
