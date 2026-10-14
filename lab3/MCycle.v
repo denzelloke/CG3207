@@ -80,8 +80,6 @@ module MCycle
     reg signed [2*width:0] M, n_M;
     reg signed [BOOTH_Q_WIDTH-1:0] Q, n_Q;
     reg                    Q_previous_bit, n_Q_previous_bit;
-
-    reg signed [2*width:0] booth_addend;
     reg [2:0] booth_bits;
 
     //divide reg
@@ -125,7 +123,6 @@ module MCycle
         n_M = M;
         n_Q = Q;
         n_Q_previous_bit = Q_previous_bit;
-        booth_addend = 0;
         booth_bits = 3'b000;
 
         trial_remainder = 0;
@@ -152,13 +149,13 @@ module MCycle
             // Sign-extend or zero-extend multiplicand
             if (MCycleOp == 2'b00) begin
                 // Signed multiplication: sign-extend both operands.
-                n_M = {{(width+1){Operand1[width-1]}}, Operand1};
-                n_Q = {{(BOOTH_Q_WIDTH-width){Operand2[width-1]}}, Operand2};
+                n_M = {{(width+1){Operand2[width-1]}}, Operand2};
+                n_Q = {{(BOOTH_Q_WIDTH-width){Operand1[width-1]}}, Operand1};
             end
             else begin
                 // Unsigned multiplication: zero-extend both operands.
-                n_M = {{(width+1){1'b0}}, Operand1};
-                n_Q = {{(BOOTH_Q_WIDTH-width){1'b0}}, Operand2};
+                n_M = {{(width+1){1'b0}}, Operand2};
+                n_Q = {{(BOOTH_Q_WIDTH-width){1'b0}}, Operand1};
             end
 
             n_Q_previous_bit = 1'b0;
@@ -176,20 +173,18 @@ module MCycle
                 booth_bits = {Q[1:0], Q_previous_bit};
 
                 case (booth_bits)
-                    3'b000, 3'b111: booth_addend = 0;
-                    3'b001, 3'b010: booth_addend = M;
-                    3'b011:         booth_addend = M <<< 1;
-                    3'b100:         booth_addend = -(M <<< 1);
-                    3'b101, 3'b110: booth_addend = -M;
-                    default:        booth_addend = 0;
+                    3'b000, 3'b111: n_A = A + 0;
+                    3'b001, 3'b010: n_A = A + M;
+                    3'b011:         n_A = A + (M <<< 1);
+                    3'b100:         n_A = A + (-(M <<< 1));
+                    3'b101, 3'b110: n_A = A + (-M);
+                    default:        n_A = A + 0;
                 endcase
-
-                n_A = A + booth_addend;
 
                 // Arithmetic shift of the combined {A, Q, Q-1} register by 2 bits
                 n_Q_previous_bit = Q[1];
-                n_Q = {n_A[1:0], Q[BOOTH_Q_WIDTH-1:2]};
-                n_A = n_A >>> 2;
+                n_Q = {n_A[1:0], Q[BOOTH_Q_WIDTH-1:2]}; //shift down by 2, first 2 bits of A in, last 2 bits out
+                n_A = n_A >>> 2; //shift A by 2
 
                 if (count == BOOTH_STEPS - 1) begin
                     n_done = 1'b1;
@@ -230,8 +225,6 @@ module MCycle
                         if (Operand1[width-1])
                             n_temp_sum[2*width-1:width] =
                                 ~n_temp_sum[2*width-1:width] + 1'b1;
-
-                        
                     end
                 
                     n_Result2 = n_temp_sum[2*width-1 : width] ;
