@@ -32,7 +32,7 @@
 */
 
 module MCycle #(
-    parameter width = 32
+    parameter width = 4
 )  // Keep this at 4 to verify your algorithms with 4 bit numbers (easier). When using MCycle as a component in RV, generic map it to 32.
 (
     input CLK,
@@ -63,6 +63,9 @@ module MCycle #(
     reg [2*width-1:0] temp_sum = 0;
     reg [2*width-1:0] shifted_op1 = 0;
     reg [2*width-1:0] shifted_op2 = 0;
+
+    reg [2*width+1 : 0] booth = 0;
+    reg [2*width+1 : 0] n_booth;
 
     // What each of the above becomes at the next edge. The computation is
     // written as a sequence of steps over these, so that the registers
@@ -108,17 +111,20 @@ module MCycle #(
         n_Result1 = Result1;
         n_Result2 = Result2;
         n_done = 1'b0;
+        n_booth = booth;
 
         // n_state == COMPUTING and state == IDLE implies we are just transitioning into COMPUTING
         if( RESET | (n_state == COMPUTING & state == IDLE) ) begin // 2nd condition is true during the very 1st clock cycle of the multiplication
             n_count = 0;
             n_temp_sum = 0;
 
-            // initialise for multiplication
+            // initialise for multiplication (booth)
             if (~MCycleOp[1]) begin
-                // sign extend the operands
-                n_shifted_op1 = {{width{~MCycleOp[0] & Operand1[width-1]}}, Operand1};
-                n_shifted_op2 = {{width{~MCycleOp[0] & Operand2[width-1]}}, Operand2};
+                n_shifted_op1[width : 0] = {
+                    Operand1[width-1], Operand1
+                };  // sign extend M (Multiplicand)
+                n_booth = 0;  // A = 0, q0 = 0
+                n_booth[width : 1] = Operand2;  // Q (Multiplier), no sign extended
             end
 
             // initialise for division
@@ -138,22 +144,35 @@ module MCycle #(
         // Guarded so that the cycle in which Busy falls - the one the processor uses to write the result back - does not run another iteration over it, and so that the results are held while idle.
         if (n_state == COMPUTING) begin
 
-            // MULTIPLY
+            // MULTIPLY - BOOTHS ALGO
             if (~MCycleOp[1]) begin
-                // if( ~MCycleOp[0] ), takes 2*'width' cycles to execute, returns signed(Operand1)*signed(Operand2)
-                // if( MCycleOp[0] ), takes 'width' cycles to execute, returns unsigned(Operand1)*unsigned(Operand2)
-                if (n_shifted_op2[0])  // add only if b0 = 1
-                    n_temp_sum = n_temp_sum + n_shifted_op1;  // partial product for multiplication
+                // legend :
+                // M (Multiplicand) = n_shifted_op1[width : 0] sign extend
+                // A                = n_booth[2*width+1: width+1] sign extend
+                // Q (Multiplier)   = n_booth[width : 1] no sign extend
+                // q0               = n_booth[0]
+                // n                = n_count
 
-                n_shifted_op2 = {1'b0, n_shifted_op2[2*width-1 : 1]};  // fixed srl by 1
-                n_shifted_op1 = {n_shifted_op1[2*width-2 : 0], 1'b0};  // fixed sll by 1
+                // step 1: 3 paths of q1q0
+                case (n_booth[1 : 0])
+                    2'b00, 2'b11: begin
+                    end  // no op
+                    2'b01:
+                    n_booth[2*width+1: width+1] = n_booth[2*width+1: width+1] + n_shifted_op1[width : 0]; // A = A + M
+                    2'b10:
+                    n_booth[2*width+1: width+1] = n_booth[2*width+1: width+1] - n_shifted_op1[width : 0]; // A = A - M
+                endcase
 
-                if ((MCycleOp[0] && (n_count == COUNT_LAST_W[7:0])) || (!MCycleOp[0] && (n_count == COUNT_LAST_2W[7:0])))
+                // step 2: perform sra on A, Q, q0
+                n_booth = {n_booth[2*width+1], n_booth[2*width+1:1]};
+
+                // step 3: check if termination criteria hit, else increment n_count
+                if (n_count == COUNT_LAST_W) begin
                     n_done = 1'b1;
-
-                n_count   = n_count + 1;
-                n_Result2 = n_temp_sum[2*width-1 : width];
-                n_Result1 = n_temp_sum[width-1 : 0];
+                    n_Result1 = n_booth[width:1];  // LSW product
+                    n_Result2 = n_booth[2*width:width+1];  // MSW product
+                end
+                else n_count = n_count + 1;
             end
 
 
@@ -202,7 +221,7 @@ module MCycle #(
                     if (~MCycleOp[0] & Operand1[width-1]) n_Result2 = ~n_Result2 + 1;
                 end
 
-                n_count = n_count + 1;
+                else n_count = n_count + 1;
             end
         end
     end
@@ -217,6 +236,7 @@ module MCycle #(
         shifted_op2 <= n_shifted_op2;
         Result1 <= n_Result1;
         Result2 <= n_Result2;
+        booth <= n_booth;
     end
 
 endmodule
