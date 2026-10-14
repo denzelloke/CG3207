@@ -32,7 +32,7 @@
 */
 
 module MCycle #(
-    parameter width = 4
+    parameter width = 32
 )  // Keep this at 4 to verify your algorithms with 4 bit numbers (easier). When using MCycle as a component in RV, generic map it to 32.
 (
     input CLK,
