@@ -43,7 +43,7 @@ module MCycle #(
     input [width-1:0] Operand2,  // Multiplier / Divisor
     output reg [width-1:0] Result1,  // LSW of Product / Quotient
     output reg [width-1:0] Result2,  // MSW of Product / Remainder
-    output reg Busy // Set immediately when Start is set. Cleared when the Results become ready. This bit can be used to stall the processor while multi-cycle operations are on.
+    output reg Busy                  // Set immediately when Start is set. Cleared when the Results become ready. This bit can be used to stall the processor while multi-cycle operations are on.
 );
 
     // since the IDLE_PROCESS is combinational, instantaneously asserts Busy once Start is asserted
@@ -52,8 +52,8 @@ module MCycle #(
 
     // Last value of count for each multiplication. Part-selected where they are
     // used, so the comparisons against count do not silently widen it.
-    localparam COUNT_LAST_W = width - 1;  // unsigned multiply
-    localparam COUNT_LAST_2W = 2*width - 1 ;  // signed multiply, whose operands are sign extended to 2*width
+    localparam COUNT_LAST_W = width - 1;  // unsigned multiply, W bits
+    localparam COUNT_LAST_2W = 2 * width - 1;  // signed multiply, sign extended to 2W bits
 
     reg state = IDLE;
     reg n_state = IDLE;
@@ -123,8 +123,12 @@ module MCycle #(
                 n_shifted_op1[width : 0] = {
                     Operand1[width-1], Operand1
                 };  // sign extend M (Multiplicand)
-                n_booth = 0;  // A = 0, q0 = 0
-                n_booth[width : 1] = Operand2;  // Q (Multiplier), no sign extended
+
+                // A                = n_booth[2*width+1: width+1] sign extend
+                // Q (Multiplier)   = n_booth[width : 1] no sign extend
+                // q0               = n_booth[0]
+                n_booth = 0;
+                n_booth[width : 1] = Operand2;
             end
 
             // initialise for division
@@ -132,6 +136,7 @@ module MCycle #(
                 n_Result1 = 0;
                 n_shifted_op1 = {{width{1'b0}}, Operand1};
                 n_shifted_op2 = {{width{1'b0}}, Operand2};
+                // flip to +ve if the operand is -ve
                 if (~MCycleOp[0] & Operand1[width-1]) begin
                     n_shifted_op1[width-1 : 0] = ~n_shifted_op1[width-1 : 0] + 1'b1;
                 end
@@ -180,30 +185,44 @@ module MCycle #(
             // DIVIDE
             else begin
 
-                // legend:
+                // ALGO:
+                // toothpaste working dividend from unused dividend
+                // (subtract) working dividend - divisor = working remainder
+                // if working remainder < 0 : quotient append 0
+                // if working remainder >= 0 : quotient append 1
+                //      and this working remainder will be next working dividend
+                // check terminate
+
+                // LEGEND:
                 // n_shifted_op1[2*width-1 : width] = working dividend
                 // n_shifted_op1[width-1 : 0]       = unused dividend
-                // n_shifted_op2                    = divisor
-                // n_temp_sum[width : 0]            = working dividend - divisor
+                // n_shifted_op2[width-1 :0]        = divisor
+                // n_temp_sum[width : 0]            = working remainder (width+1 bits long so u can pad and subtract properly)
                 // n_Result1                        = quotient
                 // n_Result2                        = remainder
 
-                // bring new digit down to working divisor
+
+                // push out new digit into working dividend (like toothpaste)
+                // MSB is now the prev [2*width-2], pad LSB with zero
                 n_shifted_op1 = {n_shifted_op1[2*width-2 : 0], 1'b0};
 
-                // working remainder = working dividend - divisor
+                // (subtract) working remainder = working dividend - divisor
+                // subtract using width+1 wide registers so that the carry/overflow stuff is handled properly idk
                 n_temp_sum[width :0] = {1'b0, n_shifted_op1[2*width-1 :width]} - {1'b0, n_shifted_op2[width-1 :0]};
 
                 // if remainder is -ve
+                // ie if MSB is 1
                 if (n_temp_sum[width] == 1) begin
                     n_Result1 = {n_Result1[width-2 : 0], 1'b0};  // append 0 to quotient
                 end
 
-                // if remainder is +ve or 0
+                // if remainder >= 0
+                // is if MSB is 0
                 else begin
                     n_Result1 = {n_Result1[width-2 : 0], 1'b1};  // append 1 to quotient
 
-                    // working remainder is now the next working divisor
+                    // working remainder is now the next working dividend
+                    // use n_temp_sum[width-1 : 0] here cos the working remainder is now 
                     n_shifted_op1[2*width-1 : width] = n_temp_sum[width-1 : 0];
                 end
 
@@ -212,12 +231,13 @@ module MCycle #(
                     n_done = 1'b1;
                     n_Result2 = n_shifted_op1[2*width-1:width];
 
-                    // make quotient negative if operand signs are diff & if we doing signed div
+                    // if we doing signed div, and if operand signs are diff
+                    // make quotient negative 
                     if (~MCycleOp[0] & (Operand1[width-1] ^ Operand2[width-1])) begin
                         n_Result1 = ~n_Result1 + 1;
                     end
 
-                    // make remainder negative if dividend was negative
+                    // make remainder negative if Op1 (dividend) sign bit = 1
                     if (~MCycleOp[0] & Operand1[width-1]) n_Result2 = ~n_Result2 + 1;
                 end
 
