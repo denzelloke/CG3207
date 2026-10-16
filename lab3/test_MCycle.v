@@ -40,67 +40,172 @@ module test_MCycle(
     reg RESET = 0 ;
     reg Start = 0 ;
     reg [1:0] MCycleOp = 0 ;
-    reg [3:0] Operand1 = 0 ;
-    reg [3:0] Operand2 = 0 ;
+    reg [31:0] Operand1 = 0 ;
+    reg [31:0] Operand2 = 0 ;
 
     // DECLARE OUTPUT SIGNALs
-    wire [3:0] Result1 ;
-    wire [3:0] Result2 ;
+    wire [31:0] Result1 ;
+    wire [31:0] Result2 ;
     wire Busy ;
     
     // INSTANTIATE DEVICE/UNIT UNDER TEST (DUT/UUT)
-    MCycle dut( 
-        CLK, 
-        RESET, 
-        Start, 
-        MCycleOp, 
-        Operand1, 
-        Operand2, 
-        Result1, 
-        Result2, 
+    MCycle #(
+    .width(32),
+    .ENHANCED_MUL(1'b0)
+    ) dut(
+        CLK,
+        RESET,
+        Start,
+        MCycleOp,
+        Operand1,
+        Operand2,
+        Result1,
+        Result2,
         Busy
-        ) ;
+    );
     
     // STIMULI
     initial begin
         // hold reset state for 100 ns.
         #10 ;    
-        MCycleOp = 2'b00 ;
-        Operand1 = 4'b1111 ;
-        Operand2 = 4'b1111 ;
+        MCycleOp = 2'b00 ;  //signed mul
+        Operand1 = 32'hFFFFFFFF ;   // -1
+        Operand2 = 32'hFFFFFFFF ;   // -1
         Start = 1'b1 ; // Start is asserted continously(Operations are performed back to back). To try a non-continous Start, you can uncomment the commented lines.    
 
         wait(Busy) ; // suspend initial block till condition becomes true  ;
         wait(~Busy) ;
+        #1;
+        $display("Signed multiplication 1: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
 //        #10 ;
 //        Start = 1'b0 ;
 //        #10 ;
-        Operand1 = 4'b1110 ;
-        Operand2 = 4'b1111 ;
+        Operand1 = 32'hFFFFFFFE ;   // -2
+        Operand2 = 32'hFFFFFFFF ;   // -1
 //        Start = 1'b1 ;
         
         wait(Busy) ; 
         wait(~Busy) ;
+        #1;
+        $display("Signed multiplication 2: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
 //        #10 ;
 //        Start = 1'b0 ;
 //        #10 ;
-        MCycleOp = 2'b01 ;
-        Operand1 = 4'b1111 ;
-        Operand2 = 4'b1111 ;
+        MCycleOp = 2'b01 ;  //unsigned mul
+        Operand1 = 32'hFFFFFFFF ;   // 4294967295
+        Operand2 = 32'hFFFFFFFF ;   // 4294967295
 //        Start = 1'b1 ;
 
         wait(Busy) ; 
         wait(~Busy) ; 
+        #1;
+        $display("Unsigned multiplication 1: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
 //        #10 ;
 //        Start = 1'b0 ;
 //        #10 ;
-        Operand1 = 4'b1110 ;
-        Operand2 = 4'b1111 ;
+        Operand1 = 32'hFFFFFFFE ;   // 4294967294
+        Operand2 = 32'hFFFFFFFF ;   // 4294967295
 //        Start = 1'b1 ;
 
         wait(Busy) ; 
         wait(~Busy) ; 
+        #1;
+        $display("Unsigned multiplication 2: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
+        MCycleOp = 2'b10 ;  //signed div
+        Operand1 = 32'hFFFFFFEF ;   // -17
+        Operand2 = 32'h00000005 ;   // 5
+        Start = 1'b1 ;
+
+        wait(Busy) ;
+        wait(~Busy) ;
+        #1;
+        $display("Signed division 1: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
+        // 17 / -5 = -3 remainder 2
+        Operand1 = 32'h00000011 ;   // 17
+        Operand2 = 32'hFFFFFFFB ;   // -5
+
+        wait(Busy) ;
+        wait(~Busy) ;
+        #1;
+        $display("Signed division 2: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
+        // -17 / -5 = 3 remainder -2
+        Operand1 = 32'hFFFFFFEF ;   // -17
+        Operand2 = 32'hFFFFFFFB ;   // -5
+
+        wait(Busy) ;
+        wait(~Busy) ;
+        #1;
+        $display("Signed division 3: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
+        // -8 / 2 = -4 remainder 0
+        Operand1 = 32'hFFFFFFF8 ;   // -8
+        Operand2 = 32'h00000002 ;   // 2
+
+        wait(Busy) ;
+        wait(~Busy) ;
+        #1;
+        $display("Signed division 4: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
+        MCycleOp = 2'b11 ;  //unsigned div
+
+        // 17 / 5 = 3 remainder 2
+        Operand1 = 32'h00000011 ;   // 17
+        Operand2 = 32'h00000005 ;   // 5
+
+        wait(Busy) ;
+        wait(~Busy) ;
+        #1;
+        $display("Unsigned division 1: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
+        // 14 / 3 = 4 remainder 2
+        Operand1 = 32'h0000000E ;   // 14
+        Operand2 = 32'h00000003 ;   // 3
+
+        wait(Busy) ;
+        wait(~Busy) ;
+        #1;
+        $display("Unsigned division 2: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
+        // 3 / 5 = 0 remainder 3
+        Operand1 = 32'h00000003 ;   // 3
+        Operand2 = 32'h00000005 ;   // 5
+
+        wait(Busy) ;
+        wait(~Busy) ;
+        #1;
+        $display("Unsigned division 3: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+
+        // 0xFFFFFFEF / 5 = 0x3333332F remainder 4
+        Operand1 = 32'hFFFFFFEF ;   // 4294967279 unsigned
+        Operand2 = 32'h00000005 ;   // 5
+
+        wait(Busy) ;
+        wait(~Busy) ;
+        #1;
+        $display("Unsigned division 4: Result1 = %h, Result2 = %h",
+                 Result1, Result2);
+        
         Start = 1'b0 ;
+
+        #10;
+        $finish;
     end
      
     // GENERATE CLOCK       

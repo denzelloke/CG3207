@@ -258,8 +258,9 @@ module RV #(
   );
 
   MCycle #(
-      .width(32)
-  ) MCycle1 (
+    .width(32),
+    .ENHANCED_MUL(1'b1)
+) MCycle1 (
       CLK,
       RESET,
       MCycleStart,      //from decoder
