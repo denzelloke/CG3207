@@ -170,19 +170,19 @@ module MCycle
         // Guarded so that the cycle in which Busy falls - the one the processor uses to write the result back - does not run another iteration over it, and so that the results are held while idle.
         if( n_state == COMPUTING && state == COMPUTING) begin
             if( ~MCycleOp[1] ) begin // Multiply
-                booth_bits = {Q[1:0], Q_previous_bit};
+                booth_bits = {Q[1:0], Q_previous_bit}; //the 3 bits to look at
 
                 case (booth_bits)
                     3'b000, 3'b111: n_A = A + 0;
                     3'b001, 3'b010: n_A = A + M;
-                    3'b011:         n_A = A + (M <<< 1);
-                    3'b100:         n_A = A + (-(M <<< 1));
+                    3'b011:         n_A = A + (M <<< 1); //shift to multiply 2
+                    3'b100:         n_A = A + (-(M <<< 1)); 
                     3'b101, 3'b110: n_A = A + (-M);
                     default:        n_A = A + 0;
                 endcase
 
                 // Arithmetic shift of the combined {A, Q, Q-1} register by 2 bits
-                n_Q_previous_bit = Q[1];
+                n_Q_previous_bit = Q[1]; //shift by 2 so become Q[1]
                 n_Q = {n_A[1:0], Q[BOOTH_Q_WIDTH-1:2]}; //shift down by 2, first 2 bits of A in, last 2 bits out
                 n_A = n_A >>> 2; //shift A by 2
 
@@ -197,7 +197,7 @@ module MCycle
 
             else begin
 
-                // remainder[4 bits], put the highest bit inside as the lowest
+                // remainder + highest bit in Quiotent to multiply
                 trial_remainder = {n_temp_sum[2*width-1:width], n_temp_sum[width-1]}; 
 
                 quotient_work = n_temp_sum[width-1:0] << 1; //shift by 1 to remove the highest bit that is already in trial_remainder
