@@ -35,167 +35,172 @@ module Decoder (
     input [6:0] Opcode,
     input [2:0] Funct3,
     input [6:0] Funct7,
-    output reg [1:0] PCS,  // 00 for non-control, 01 for conditional branch, 10 for jal, 11 for jalr
+    output reg [1:0] PCS,  // 00non-control, 01 conditional branch, 10 jal, 11 jalr
     output reg RegWrite,		// Asserted only by instructions which write to register file (load, auipc, lui, DPImm, DPReg);
     output reg MemWrite,  // Asserted only by store (sw)
     output reg MemtoReg,  // Asserted only by load (lw)
-    output reg [1:0] ALUSrcA, 	// Needed for lui, auipic. Refer to the microarchitecture for its use. Uncomment wire and port map in RV.v as well
-    output reg [1:0] ALUSrcB,		// Asserted by all instructions which use an immediate (load, store, lui, auipc, DPImm). Needs to be expanded to a 2-bit signal to support link functionality for jal, jalr. Change wire width in RV.v as well
-    output reg [2:0] ImmSrc,  // 000 for U, 010 for UJ, 011 for I, 110 for S, 111 for SB.
-    output reg [3:0] ALUControl,	// 0000 for add, 0001 for sub, 1110 for and, 1100 for or, 0010 for sll, 1010 for srl, 1011 for sra, 0001 for branch, 0000 for all others.
-    // Note that the most significant 3 bits are Funct3 for all DP instrns. LSB is the same as Funct7[5] for DPReg type and DPImm_shifts. For other DPImms, Funct7[5] is 0.
-    // It is the same as sub for branches, and add for all others not mentioned in the line above.
-
-    //for MCycle
-    output reg MCycleStart,
-    output reg [1:0] MCycleOp,
-    output reg MCycleInstr
+    output reg [1:0] ALUSrcA, 	// Needed lui, auipic. Refer to the microarchitecture its use. Uncomment wire and port map in RV.v as well
+    output reg [1:0] ALUSrcB,		// Asserted by all instructions which use an immediate (load, store, lui, auipc, DPImm). Needs to be expanded to a 2-bit signal to support link functionality jal, jalr. Change wire width in RV.v as well
+    output reg [2:0] ImmSrc,  // 000 U, 010 UJ, 011 I, 110 S, 111 SB.
+    output reg [3:0] ALUControl,	// 0000 add, 0001 sub, 1110 and, 1100 or, 0010 sll, 1010 srl, 1011 sra, 0001 branch, 0000 all others.
+    output reg [1:0] MCycleOp // 00 signed multiplication, 01 unsigned multiplication, 10 signed division, 11 unsigned division.
+    // Note that the most significant 3 bits are Funct3 all DP instrns. LSB is the same as Funct7[5] DPReg type and DPImm_shifts. For other DPImms, Funct7[5] is 0.
+    // It is the same as sub branches, and add all others not mentioned in the line above.
 );
-  // Change wire to reg if assigned inside a procedural (always) block. However, where it is easy enough, use assign instead of always.
-  // A 2-1 multiplexing can be done easily using an assign with a ternary operator
-  // For multiplexing with number of inputs > 2, a case construct within an always block is a natural fit. DO NOT to use nested ternary assignment operator as it hampers the readability of your code.
 
-  // Decoder implementation is as follows:
-  always @(*) begin
-    //defaults for MCycle
-    MCycleStart = 1'b0;
-    MCycleOp = 2'b00;
-    MCycleInstr = 1'b0;
-    case (Opcode)
-      7'h33: begin  // DP Reg
-        PCS        = 2'b00;
-        MemtoReg   = 0;
-        RegWrite   = 1;
-        MemWrite   = 0;
-        ALUSrcA    = 2'b00;
-        ALUSrcB    = 2'b00;
-        ImmSrc     = 3'b000;  //R type; 000 is an arbitrary default value
-        ALUControl = {Funct3, Funct7[5]};
 
-        //for M extension
-        if (Funct7 == 7'h1) begin
-          case (Funct3)
-            3'h0: begin   //mul
-              MCycleStart = 1'b1;
-              MCycleOp = 2'b01;
-              MCycleInstr = 1'b1;
-            end
-            3'h4: begin   //div
-              MCycleStart = 1'b1;
-              MCycleOp = 2'b10;
-              MCycleInstr = 1'b1;
-            end
-            3'h5: begin
-              MCycleStart = 1'b1;
-              MCycleOp = 2'b11;
-              MCycleInstr = 1'b1;
-            end
-            default: begin
-              MCycleStart = 1'b0;
-              MCycleOp = 2'b00;
-              MCycleInstr = 1'b0;
-            end
-          endcase
+    always @(*) begin
+        if (ALUControl == 4'b1111) begin
+            case (Funct3)
+                3'h0: MCycleOp = 2'b00;  // mul
+
+                3'h1: MCycleOp = 2'b00;  // mulh
+
+                // 3'h2: MCycleOp = 2'b01;  // mulhsu
+
+                3'h3: MCycleOp = 2'b01;  // mulhu
+
+                3'h4: MCycleOp = 2'b10;  // div
+
+                3'h5: MCycleOp = 2'b11;  // divu
+
+                3'h6: MCycleOp = 2'b10;  // rem
+
+                3'h7: MCycleOp = 2'b11;  // remu 
+
+                default: MCycleOp = 2'b00;
+            endcase
         end
 
-      end
-      7'h13: begin  // DP Imm
-        PCS = 2'b00;
-        MemtoReg = 0;
-        RegWrite = 1;
-        MemWrite = 0;
-        ALUSrcA = 2'b00;
-        ALUSrcB = 2'b11;
-        ImmSrc = 3'b011;  // I type
-        ALUControl[3:1] = Funct3;
-        ALUControl [0] = (Funct3 == 3'h5) ? Funct7[5] : 1'b0;   //alucontrol[0] is funct7[5] when funct3 = 0x5 ie srli/srai operations; funct7[5] is technically the immediate 
-      end
-      7'h03: begin  // load 
-        PCS        = 2'b00;
-        MemtoReg   = 1;
-        RegWrite   = 1;
-        MemWrite   = 0;
-        ALUSrcA    = 2'b00;
-        ALUSrcB    = 2'b11;
-        ImmSrc     = 3'b011;  // I type
-        ALUControl = 4'b0000;  // add
-      end
-      7'h23: begin  // store 
-        PCS        = 2'b00;
-        MemtoReg   = 0;
-        RegWrite   = 0;
-        MemWrite   = 1;
-        ALUSrcA    = 2'b00;
-        ALUSrcB    = 2'b11;
-        ImmSrc     = 3'b110;  // S type
-        ALUControl = 4'b0000;  // add
-      end
-      7'h63: begin  // branch 
-        PCS        = 2'b01;
-        MemtoReg   = 0;
-        RegWrite   = 0;
-        MemWrite   = 0;
-        ALUSrcA    = 2'b00;
-        ALUSrcB    = 2'b00;
-        ImmSrc     = 3'b111;  // B type
-        ALUControl = 4'b0001;  // sub
-      end
-      7'h6F: begin  // jal 
-        PCS        = 2'b10;
-        MemtoReg   = 0;
-        RegWrite   = 1;
-        MemWrite   = 0;
-        ALUSrcA    = 2'b11;
-        ALUSrcB    = 2'b01;
-        ImmSrc     = 3'b010;  // J type
-        ALUControl = 4'b0000;  // add
-      end
-      7'h17: begin  // auipc 
-        PCS        = 2'b00;
-        MemtoReg   = 0;
-        RegWrite   = 1;
-        MemWrite   = 0;
-        ALUSrcA    = 2'b11;
-        ALUSrcB    = 2'b11;
-        ImmSrc     = 3'b000;  // U type
-        ALUControl = 4'b0000;  // add
-      end
-      7'h37: begin  // lui 
-        PCS        = 2'b00;
-        MemtoReg   = 0;
-        RegWrite   = 1;
-        MemWrite   = 0;
-        ALUSrcA    = 2'b01;
-        ALUSrcB    = 2'b11;
-        ImmSrc     = 3'b000;  // U type
-        ALUControl = 4'b0000;  // add
-      end
-      7'h67: begin  // jalr 
-        PCS        = 2'b11;
-        MemtoReg   = 0;
-        RegWrite   = 1;
-        MemWrite   = 0;
-        ALUSrcA    = 2'b11;
-        ALUSrcB    = 2'b01;
-        ImmSrc     = 3'b011;  // I type
-        ALUControl = 4'b0000;  // add
-      end
-      default: begin
-        PCS        = 2'b00;
-        MemtoReg   = 0;
-        RegWrite   = 0;
-        MemWrite   = 0;
-        ALUSrcA    = 2'b00;
-        ALUSrcB    = 2'b00;
-        ImmSrc     = 3'b011;  // I type
-        ALUControl = 4'b0000;  // add
-        //defaults for MCycle
-        MCycleStart = 1'b0;
-        MCycleOp = 2'b00;
-        MCycleInstr = 1'b0;
-      end
-    endcase
-  end
+        else MCycleOp = 2'b00;
+    end
+
+    always @(*) begin
+        case (Opcode)
+
+            // DP Reg
+            7'h33: begin
+                PCS      = 2'b00;
+                MemtoReg = 0;
+                RegWrite = 1;
+                MemWrite = 0;
+                ALUSrcA  = 2'b00;
+                ALUSrcB  = 2'b00;
+                ImmSrc   = 3'b000;
+                if (Funct7 == 7'b0000001) ALUControl = 4'b1111;
+                else ALUControl = {Funct3, Funct7[5]};
+            end
+
+            // DP Imm
+            7'h13: begin
+                PCS = 2'b00;
+                MemtoReg = 0;
+                RegWrite = 1;
+                MemWrite = 0;
+                ALUSrcA = 2'b00;
+                ALUSrcB = 2'b11;
+                ImmSrc = 3'b011;  // I type
+                ALUControl[3:1] = Funct3;
+                ALUControl[0] = (Funct3 == 3'h5) ? Funct7[5] : 1'b0;
+            end
+
+            // load 
+            7'h03: begin
+                PCS        = 2'b00;
+                MemtoReg   = 1;
+                RegWrite   = 1;
+                MemWrite   = 0;
+                ALUSrcA    = 2'b00;
+                ALUSrcB    = 2'b11;
+                ImmSrc     = 3'b011;  // I type
+                ALUControl = 4'b0000;  // add
+            end
+
+            // store 
+            7'h23: begin
+                PCS        = 2'b00;
+                MemtoReg   = 0;
+                RegWrite   = 0;
+                MemWrite   = 1;
+                ALUSrcA    = 2'b00;
+                ALUSrcB    = 2'b11;
+                ImmSrc     = 3'b110;  // S type
+                ALUControl = 4'b0000;  // add
+            end
+
+            // branch 
+            7'h63: begin
+                PCS        = 2'b01;
+                MemtoReg   = 0;
+                RegWrite   = 0;
+                MemWrite   = 0;
+                ALUSrcA    = 2'b00;
+                ALUSrcB    = 2'b00;
+                ImmSrc     = 3'b111;  // B type
+                ALUControl = 4'b0001;  // sub
+            end
+
+            // jal 
+            7'h6F: begin
+                PCS        = 2'b10;
+                MemtoReg   = 0;
+                RegWrite   = 1;
+                MemWrite   = 0;
+                ALUSrcA    = 2'b11;
+                ALUSrcB    = 2'b01;
+                ImmSrc     = 3'b010;  // J type
+                ALUControl = 4'b0000;  // add
+            end
+
+            // auipc 
+            7'h17: begin
+                PCS        = 2'b00;
+                MemtoReg   = 0;
+                RegWrite   = 1;
+                MemWrite   = 0;
+                ALUSrcA    = 2'b11;
+                ALUSrcB    = 2'b11;
+                ImmSrc     = 3'b000;  // U type
+                ALUControl = 4'b0000;  // add
+            end
+
+            // lui 
+            7'h37: begin
+                PCS        = 2'b00;
+                MemtoReg   = 0;
+                RegWrite   = 1;
+                MemWrite   = 0;
+                ALUSrcA    = 2'b01;
+                ALUSrcB    = 2'b11;
+                ImmSrc     = 3'b000;  // U type
+                ALUControl = 4'b0000;  // add
+            end
+
+            // jalr
+            7'h67: begin
+                PCS        = 2'b11;
+                MemtoReg   = 0;
+                RegWrite   = 1;
+                MemWrite   = 0;
+                ALUSrcA    = 2'b11;
+                ALUSrcB    = 2'b01;
+                ImmSrc     = 3'b011;  // I type
+                ALUControl = 4'b0000;  // add
+            end
+
+            // default
+            default: begin
+                PCS        = 2'b00;
+                MemtoReg   = 0;
+                RegWrite   = 0;
+                MemWrite   = 0;
+                ALUSrcA    = 2'b00;
+                ALUSrcB    = 2'b00;
+                ImmSrc     = 3'b000;
+                ALUControl = 4'b0000;
+            end
+        endcase
+    end
 endmodule
 
 
