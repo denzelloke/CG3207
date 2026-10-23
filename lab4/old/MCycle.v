@@ -32,9 +32,8 @@
 */
 
 module MCycle #(
-    parameter width = 4
-)  // Keep this at 4 to verify your algorithms with 4 bit numbers (easier). When using MCycle as a component in RV, generic map it to 32.
-(
+    parameter width = 32  // 4 for simulation, 32 for synthesis
+) (
     input CLK,
     input RESET,
     input Start,                     // Multi-cycle Enable. The control unit should assert this when an instruction with a multi-cycle operation is detected.
@@ -67,7 +66,7 @@ module MCycle #(
     // Radix-4 Booth: pad Q to an even width with room for an unsigned sign bit.
     // Same widths and round count as the supplied three-bit Booth reference.
     localparam BOOTH_Q_WIDTH = 2 * ((width + 2) / 2);
-    localparam BOOTH_STEPS = BOOTH_Q_WIDTH / 2;
+    localparam BOOTH_STEPS   = BOOTH_Q_WIDTH / 2;
 
     reg signed [2*width:0] A = 0, n_A;
     reg signed [2*width:0] M = 0, n_M;
@@ -136,13 +135,13 @@ module MCycle #(
                 // Preserve the original operand roles: M = Operand1, Q = Operand2.
                 if (MCycleOp == 2'b00) begin
                     // Signed multiplication: sign-extend both operands.
-                    n_M = {{(width+1){Operand1[width-1]}}, Operand1};
-                    n_Q = {{(BOOTH_Q_WIDTH-width){Operand2[width-1]}}, Operand2};
+                    n_M = {{(width + 1) {Operand1[width-1]}}, Operand1};
+                    n_Q = {{(BOOTH_Q_WIDTH - width) {Operand2[width-1]}}, Operand2};
                 end
                 else begin
                     // Unsigned multiplication: zero-extend both operands.
-                    n_M = {{(width+1){1'b0}}, Operand1};
-                    n_Q = {{(BOOTH_Q_WIDTH-width){1'b0}}, Operand2};
+                    n_M = {{(width + 1) {1'b0}}, Operand1};
+                    n_Q = {{(BOOTH_Q_WIDTH - width) {1'b0}}, Operand2};
                 end
                 n_Q_previous_bit = 1'b0;
             end
@@ -174,8 +173,8 @@ module MCycle #(
                 case (booth_bits)
                     3'b000, 3'b111: n_A = n_A + 0;
                     3'b001, 3'b010: n_A = n_A + n_M;
-                    3'b011:         n_A = n_A + (n_M <<< 1); // A + 2M
-                    3'b100:         n_A = n_A + (-(n_M <<< 1)); // A - 2M
+                    3'b011:         n_A = n_A + (n_M <<< 1);  // A + 2M
+                    3'b100:         n_A = n_A + (-(n_M <<< 1));  // A - 2M
                     3'b101, 3'b110: n_A = n_A + (-n_M);
                     default:        n_A = n_A + 0;
                 endcase

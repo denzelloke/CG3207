@@ -31,10 +31,21 @@
 ----------------------------------------------------------------------------------
 */
 
-module ALU (
+module ALU #(
+    parameter width = 32  // 4 for simulation, 32 for synthesis
+) (
+
+    // multicycle addons
+    input CLK,
+    input RESET,
+    input Start,
+    input [1:0] MCycleOp,
+    output reg Busy,
+
+    // stock alu
     input [31:0] Src_A,
     input [31:0] Src_B,
-    input [3:0] ALUControl, // 0000 add, 0001 sub, 1110 and, 1100 or, 0010 sll, 1010 srl, 1011 sra, 1111 mul div.
+    input [3:0] ALUControl, // 0000 add, 0001 sub, 1110 and, 1100 or, 0010 sll, 1010 srl, 1011 sra, 1111 mul/div.
     input [2:0] Funct3,
     output reg [31:0] ALUResult,
     output [2:0] ALUFlags  //{eq, lt, ltu}
@@ -45,7 +56,7 @@ module ALU (
     wire [ 4:0] Shamt5;
     wire [31:0] ShIn;
     wire [31:0] ShOut;
-    
+
     // Other signals; 33-bits wide to accommodate the extra C_0 bit
     wire [32:0] S_wider;
     reg  [32:0] Src_A_comp;
@@ -75,8 +86,8 @@ module ALU (
                 Src_B_comp = {1'b0, ~Src_B};
                 ALUResult  = S_wider[31:0];  //keep lower 32 bits
             end
-            4'b1111:                   ALUResult = 32'hDEADDEAD; // mul div
-            default: ALUResult = 32'b0;
+            4'b1111:                   ALUResult = MCycle_result;  // mul/div
+            default:                   ALUResult = 32'b0;
         endcase
     end
 
@@ -102,12 +113,35 @@ module ALU (
     assign Shamt5 = Src_B[4:0];
     assign ShIn = Src_A;
 
-    // instantiate Shifter        
+
+    // MULTI CYCLE ===
+    always @(*) begin
+        if (Funct3 == 3'h0 || Funct3 == 3'h4 || Funct3 == 3'h5)
+            MCycle_result = Result1;  // lsw or quotient
+
+        else MCycle_result = Result2;  // hsw or remainder
+    end
+
+    // instantiate multicycle
+    MCycle MCycle1 (
+        CLK,
+        RESET,
+        Start,
+        MCycleOp,
+        Src_A,
+        Src_B,
+        Result1,
+        Result2,
+        Busy
+    );
+
+
+
+    // instantiate shifter        
     Shifter Shifter1 (
         Sh,
         Shamt5,
         ShIn,
         ShOut
     );
-
 endmodule
