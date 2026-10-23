@@ -49,7 +49,7 @@ module RV #(
 
     // Please read Lab 4 Enhancement: Implementing additional instructions on how to support lb/lbu/lh/lhu/sb/sh
 
-    //RV Signals
+    // RV Signals
     wire [ 2:0] SizeSel;  //to support lb/lbu/lh/lhu/sb/sh
     wire [31:0] ReadData;
     wire [31:0] WriteData;
@@ -70,7 +70,7 @@ module RV #(
     assign WE = RegWrite && WE_PC && !RESET; // regfile doesnt stall even if we_pc = 0. cos regfile writes on posedge & we=1
     assign rs1 = Instr[19:15];
     assign rs2 = Instr[24:20];
-    assign rd  = Instr[11:7];
+    assign rd = Instr[11:7];
     reg [31:0] MCycle_res;
     assign Result = (ALUControl == 4'b1111) ? MCycle_res : ALUResult;
     wire MemtoReg;
@@ -108,10 +108,10 @@ module RV #(
     assign WE_PC = ~Busy;
     always @(*) begin
         case (PCSrc)
-            2'b00:   PC_IN = PC + 32'd4;  //non-control
-            2'b01:   PC_IN = PC + ExtImm;  //jal
-            2'b11:   PC_IN = (RD1 + ExtImm) & ~32'd1;  //jalr
-            default: PC_IN = PC + 32'd4;  //default case
+            2'b00:   PC_IN = PC + 32'd4;  // non-control
+            2'b01:   PC_IN = PC + ExtImm;  // jal
+            2'b11:   PC_IN = (RD1 + ExtImm) & ~32'd1;  // jalr
+            default: PC_IN = PC + 32'd4;  // default case
         endcase
     end
 
@@ -160,7 +160,7 @@ module RV #(
 
         else MCycle_res = Result2;  // hsw / remainder
     end
-    
+
     MCycle MCycle1 (
         CLK,
         RESET,
