@@ -40,7 +40,7 @@ module ALU #(
     input RESET,
     input Start,
     input [1:0] MCycleOp,
-    output reg Busy,
+    output Busy,
 
     // stock alu
     input [31:0] Src_A,
@@ -66,6 +66,7 @@ module ALU #(
     reg V;
 
     assign S_wider = Src_A_comp + Src_B_comp + C_0;
+    reg [31:0] MCycle_result;
 
     // perform operations, assign ALUResult
     always @(*) begin
@@ -115,6 +116,8 @@ module ALU #(
 
 
     // MULTI CYCLE ===
+    wire [31:0] Result1;
+    wire [31:0] Result2;
     always @(*) begin
         if (Funct3 == 3'h0 || Funct3 == 3'h4 || Funct3 == 3'h5)
             MCycle_result = Result1;  // lsw or quotient
@@ -134,9 +137,7 @@ module ALU #(
         Result2,
         Busy
     );
-
-
-
+    
     // instantiate shifter        
     Shifter Shifter1 (
         Sh,
