@@ -164,99 +164,142 @@ module MCycle #(
         // Guarded so that the cycle in which Busy falls - the one the processor uses to write the result back - does not run another iteration over it, and so that the results are held while idle.
         if (n_state == COMPUTING) begin
 
-            // MULTIPLY - THREE-BIT (RADIX-4) BOOTHS ALGO
+
+            // MULTIPLY 
             if (~MCycleOp[1]) begin
-                // Use next values because this design also performs the first
-                // iteration in the cycle that initialises the operands.
-                booth_bits = {n_Q[1:0], n_Q_previous_bit};
 
-                case (booth_bits)
-                    3'b000, 3'b111: n_A = n_A + 0;
-                    3'b001, 3'b010: n_A = n_A + n_M;
-                    3'b011:         n_A = n_A + (n_M <<< 1);  // A + 2M
-                    3'b100:         n_A = n_A + (-(n_M <<< 1));  // A - 2M
-                    3'b101, 3'b110: n_A = n_A + (-n_M);
-                    default:        n_A = n_A + 0;
-                endcase
-
-                // Arithmetic right shift of {A, Q, previous_bit} by two bits.
-                // Q must receive A's low bits before A is shifted.
-                n_Q_previous_bit = n_Q[1];
-                n_Q = {n_A[1:0], n_Q[BOOTH_Q_WIDTH-1:2]};
-                n_A = n_A >>> 2;
-
-                if (n_count == BOOTH_STEPS - 1) begin
-                    n_done = 1'b1;
-                    // Retain the low 2*width product bits, as in the reference.
-                    n_temp_sum = {n_A, n_Q};
-                    n_Result1 = n_temp_sum[width-1:0];
-                    n_Result2 = n_temp_sum[2*width-1:width];
+                // quick terminate for multiply by zero
+                if (Operand1 == 32'b0 || Operand2 == 32'b0) begin
+                    n_done    = 1'b1;
+                    n_Result1 = 32'h0;
+                    n_Result2 = 32'h0;
                 end
-                else n_count = n_count + 1;
+                // quick terminate for Operand1 * 1
+                else if (Operand2 == 1) begin
+                    n_done    = 1'b1;
+                    n_Result1 = Operand1;
+                    n_Result2 = {width{(MCycleOp == 2'b00) && Operand1[width-1]}};
+                end
+
+                // quick terminate for 1* Operand2
+                else if (Operand1 == 1) begin
+                    n_done    = 1'b1;
+                    n_Result1 = Operand2;
+                    n_Result2 = {width{(MCycleOp == 2'b00) && Operand2[width-1]}};
+                end
+
+
+                else begin
+                    // THREE-BIT (RADIX-4) BOOTHS ALGO
+                    // Use next values because this design also performs the first
+                    // iteration in the cycle that initialises the operands.
+                    booth_bits = {n_Q[1:0], n_Q_previous_bit};
+
+                    case (booth_bits)
+                        3'b000, 3'b111: n_A = n_A + 0;
+                        3'b001, 3'b010: n_A = n_A + n_M;
+                        3'b011:         n_A = n_A + (n_M <<< 1);  // A + 2M
+                        3'b100:         n_A = n_A + (-(n_M <<< 1));  // A - 2M
+                        3'b101, 3'b110: n_A = n_A + (-n_M);
+                        default:        n_A = n_A + 0;
+                    endcase
+
+                    // Arithmetic right shift of {A, Q, previous_bit} by two bits.
+                    // Q must receive A's low bits before A is shifted.
+                    n_Q_previous_bit = n_Q[1];
+                    n_Q = {n_A[1:0], n_Q[BOOTH_Q_WIDTH-1:2]};
+                    n_A = n_A >>> 2;
+
+                    if (n_count == BOOTH_STEPS - 1) begin
+                        n_done = 1'b1;
+                        // Retain the low 2*width product bits, as in the reference.
+                        n_temp_sum = {n_A, n_Q};
+                        n_Result1 = n_temp_sum[width-1:0];
+                        n_Result2 = n_temp_sum[2*width-1:width];
+                    end
+                    else n_count = n_count + 1;
+                end
             end
+
 
 
 
             // DIVIDE
             else begin
-
-                // ALGO:
-                // toothpaste working dividend from unused dividend
-                // (subtract) working dividend - divisor = working remainder
-                // if working remainder < 0 : quotient append 0
-                // if working remainder >= 0 : quotient append 1
-                //      and this working remainder will be next working dividend
-                // check terminate
-
-                // LEGEND:
-                // n_shifted_op1[2*width-1 : width] = working dividend
-                // n_shifted_op1[width-1 : 0]       = unused dividend
-                // n_shifted_op2[width-1 :0]        = divisor
-                // n_temp_sum[width : 0]            = working remainder (width+1 bits long so u can pad and subtract properly)
-                // n_Result1                        = quotient
-                // n_Result2                        = remainder
-
-
-                // push out new digit into working dividend (like toothpaste)
-                // MSB is now the prev [2*width-2], pad LSB with zero
-                n_shifted_op1 = {n_shifted_op1[2*width-2 : 0], 1'b0};
-
-                // (subtract) working remainder = working dividend - divisor
-                // subtract using width+1 wide registers so that the carry/overflow stuff is handled properly idk
-                n_temp_sum[width :0] = {1'b0, n_shifted_op1[2*width-1 :width]} - {1'b0, n_shifted_op2[width-1 :0]};
-
-                // if remainder is -ve
-                // ie if MSB is 1
-                if (n_temp_sum[width] == 1) begin
-                    n_Result1 = {n_Result1[width-2 : 0], 1'b0};  // append 0 to quotient
+                // quick terminate for divide by zero
+                if (Operand2 == 32'b0) begin
+                    n_done    = 1'b1;
+                    n_Result1 = 32'hFFFF_FFFF;
+                    n_Result2 = Operand1;
                 end
 
-                // if remainder >= 0
-                // is if MSB is 0
+                // quick terminate for divide by one
+                else if (Operand2 == 32'b1) begin
+                    n_done    = 1'b1;
+                    n_Result1 = Operand1;
+                    n_Result2 = 0;
+                end
+
                 else begin
-                    n_Result1 = {n_Result1[width-2 : 0], 1'b1};  // append 1 to quotient
+                    // ALGO:
+                    // toothpaste working dividend from unused dividend
+                    // (subtract) working dividend - divisor = working remainder
+                    // if working remainder < 0 : quotient append 0
+                    // if working remainder >= 0 : quotient append 1
+                    //      and this working remainder will be next working dividend
+                    // check terminate
 
-                    // working remainder is now the next working dividend
-                    // use n_temp_sum[width-1 : 0] here cos the working remainder is now 
-                    n_shifted_op1[2*width-1 : width] = n_temp_sum[width-1 : 0];
-                end
+                    // LEGEND:
+                    // n_shifted_op1[2*width-1 : width] = working dividend
+                    // n_shifted_op1[width-1 : 0]       = unused dividend
+                    // n_shifted_op2[width-1 :0]        = divisor
+                    // n_temp_sum[width : 0]            = working remainder (width+1 bits long so u can pad and subtract properly)
+                    // n_Result1                        = quotient
+                    // n_Result2                        = remainder
 
-                // termination criteria
-                if (n_count == COUNT_LAST_W[7 : 0]) begin
-                    n_done = 1'b1;
-                    n_Result2 = n_shifted_op1[2*width-1:width];
 
-                    // if we doing signed div, and if operand signs are diff
-                    // make quotient negative 
-                    if (~MCycleOp[0] & (Operand1[width-1] ^ Operand2[width-1])) begin
-                        n_Result1 = ~n_Result1 + 1;
+                    // push out new digit into working dividend (like toothpaste)
+                    // MSB is now the prev [2*width-2], pad LSB with zero
+                    n_shifted_op1 = {n_shifted_op1[2*width-2 : 0], 1'b0};
+
+                    // (subtract) working remainder = working dividend - divisor
+                    // subtract using width+1 wide registers so that the carry/overflow stuff is handled properly idk
+                    n_temp_sum[width :0] = {1'b0, n_shifted_op1[2*width-1 :width]} - {1'b0, n_shifted_op2[width-1 :0]};
+
+                    // if remainder is -ve
+                    // ie if MSB is 1
+                    if (n_temp_sum[width] == 1) begin
+                        n_Result1 = {n_Result1[width-2 : 0], 1'b0};  // append 0 to quotient
                     end
 
-                    // make remainder negative if Op1 (dividend) sign bit = 1
-                    if (~MCycleOp[0] & Operand1[width-1]) n_Result2 = ~n_Result2 + 1;
-                end
+                    // if remainder >= 0
+                    // is if MSB is 0
+                    else begin
+                        n_Result1 = {n_Result1[width-2 : 0], 1'b1};  // append 1 to quotient
 
-                else n_count = n_count + 1;
+                        // working remainder is now the next working dividend
+                        // use n_temp_sum[width-1 : 0] here cos the working remainder is now 
+                        n_shifted_op1[2*width-1 : width] = n_temp_sum[width-1 : 0];
+                    end
+
+
+                    // termination criteria
+                    if (n_count == COUNT_LAST_W[7 : 0]) begin
+                        n_done = 1'b1;
+                        n_Result2 = n_shifted_op1[2*width-1:width];
+
+                        // if we doing signed div, and if operand signs are diff
+                        // make quotient negative 
+                        if (~MCycleOp[0] & (Operand1[width-1] ^ Operand2[width-1])) begin
+                            n_Result1 = ~n_Result1 + 1;
+                        end
+
+                        // make remainder negative if Op1 (dividend) sign bit = 1
+                        if (~MCycleOp[0] & Operand1[width-1]) n_Result2 = ~n_Result2 + 1;
+                    end
+
+                    else n_count = n_count + 1;
+                end
             end
         end
     end

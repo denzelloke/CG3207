@@ -61,7 +61,7 @@ module RV #(
         case (PCSrc_E)
             2'b00:   PC_IN = PC_F + 32'd4;  // non-control
             2'b01:   PC_IN = PC_E + ExtImm_E;  // jal
-            // 2'b11:   PC_IN = (RD1 + ExtImm_E) & ~32'd1;  // jalr
+            2'b11:   PC_IN = (RD1_E + ExtImm_E) & ~32'd1;  // jalr
             default: PC_IN = PC_F + 32'd4;  // default case
         endcase
     end
@@ -231,9 +231,8 @@ module RV #(
 
     end
 
-    // woiii check whether these are the correct suffixes
     assign WriteData_out = WriteData_M;  // Change datapath as appropriate if supporting sb/sh
-    assign MemWrite_out  = {4{MemWrite_M && !Busy && !RESET}};  // woiii i rlly dont know what this does LOL
+    assign MemWrite_out  = {4{MemWrite_M && !Busy && !RESET}};
 
 
     // WRITEBACK STAGE ===============================================================================

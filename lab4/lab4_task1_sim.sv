@@ -1,13 +1,13 @@
 `timescale 1ns / 1ps
 // Add this file as a SIMULATION source; set tb_RV_task1 as simulation top.
 // Uses only RV's external interface. No Wrapper, peripherals or .mem files.
-// FOUR NOPs after ordinary operations and control transfers. No jalr/MULHSU.
+// FOUR NOPs after ordinary operations and control transfers. Includes jalr; no MULHSU.
 // Testbench requires SystemVerilog (.sv). Your RTL may remain Verilog (.v).
 module tb_RV_task1;
     localparam BASE  = 32'h00400000;
     localparam NOP   = 32'h00000013;
-    localparam NTEST = 114;
-    localparam WORDS = 3379;
+    localparam NTEST = 128;
+    localparam WORDS = 3707;
     reg CLK = 0, RESET = 1;
     always #5 CLK = ~CLK;
     reg [31:0] Instr_F, ReadData_M;
@@ -3382,7 +3382,7 @@ module tb_RV_task1;
         imem[3334] = 32'h00000013;  // 00403418: nop
         imem[3335] = 32'h00000013;  // 0040341c: nop
         imem[3336] = 32'h00000013;  // 00403420: nop
-        imem[3337] = 32'h001b2023;  // 00403424: sw x1, 0(x22) # completion marker
+        imem[3337] = 32'h0280006f;  // 00403424: sw x1, 0(x22) # jump to appended jalr tests
         imem[3338] = 32'h00000013;  // 00403428: nop
         imem[3339] = 32'h00000013;  // 0040342c: nop
         imem[3340] = 32'h00000013;  // 00403430: nop
@@ -3620,6 +3620,348 @@ module tb_RV_task1;
         test_name[112] = "multiply after store";
         expected[113] = 32'h0000004d;
         test_name[113] = "older writeback survives Busy";
+        imem[3347] = 32'h004030b7; // 0040344c: lui x1, 0x403
+        imem[3348] = 32'h00000013; // 00403450: nop
+        imem[3349] = 32'h00000013; // 00403454: nop
+        imem[3350] = 32'h00000013; // 00403458: nop
+        imem[3351] = 32'h00000013; // 0040345c: nop
+        imem[3352] = 32'h4c408093; // 00403460: addi x1, x1, 1220
+        imem[3353] = 32'h00000013; // 00403464: nop
+        imem[3354] = 32'h00000013; // 00403468: nop
+        imem[3355] = 32'h00000013; // 0040346c: nop
+        imem[3356] = 32'h00000013; // 00403470: nop
+        imem[3357] = 32'h000001b7; // 00403474: lui x3, 0x0
+        imem[3358] = 32'h00000013; // 00403478: nop
+        imem[3359] = 32'h00000013; // 0040347c: nop
+        imem[3360] = 32'h00000013; // 00403480: nop
+        imem[3361] = 32'h00000013; // 00403484: nop
+        imem[3362] = 32'h02a18193; // 00403488: addi x3, x3, 42
+        imem[3363] = 32'h00000013; // 0040348c: nop
+        imem[3364] = 32'h00000013; // 00403490: nop
+        imem[3365] = 32'h00000013; // 00403494: nop
+        imem[3366] = 32'h00000013; // 00403498: nop
+        imem[3367] = 32'h000082e7; // 0040349c: jalr x5, 0(x1)
+        imem[3368] = 32'h00000013; // 004034a0: nop
+        imem[3369] = 32'h00000013; // 004034a4: nop
+        imem[3370] = 32'h00000013; // 004034a8: nop
+        imem[3371] = 32'h00000013; // 004034ac: nop
+        imem[3372] = 32'h06300193; // 004034b0: wrong-path poison: must be skipped
+        imem[3373] = 32'h00000013; // 004034b4: nop
+        imem[3374] = 32'h00000013; // 004034b8: nop
+        imem[3375] = 32'h00000013; // 004034bc: nop
+        imem[3376] = 32'h00000013; // 004034c0: nop
+        imem[3377] = 32'h00000013; // 004034c4: nop
+        imem[3378] = 32'h00000013; // 004034c8: nop
+        imem[3379] = 32'h00000013; // 004034cc: nop
+        imem[3380] = 32'h00000013; // 004034d0: nop
+        imem[3381] = 32'h1c5a2423; // 004034d4: CHECK 114: jalr imm=0 oddbase=0 rd=5 link
+        imem[3382] = 32'h00000013; // 004034d8: nop
+        imem[3383] = 32'h00000013; // 004034dc: nop
+        imem[3384] = 32'h00000013; // 004034e0: nop
+        imem[3385] = 32'h00000013; // 004034e4: nop
+        imem[3386] = 32'h1c3a2623; // 004034e8: CHECK 115: jalr imm=0 oddbase=0 rd=5 skips poison
+        imem[3387] = 32'h00000013; // 004034ec: nop
+        imem[3388] = 32'h00000013; // 004034f0: nop
+        imem[3389] = 32'h00000013; // 004034f4: nop
+        imem[3390] = 32'h00000013; // 004034f8: nop
+        imem[3391] = 32'h004030b7; // 004034fc: lui x1, 0x403
+        imem[3392] = 32'h00000013; // 00403500: nop
+        imem[3393] = 32'h00000013; // 00403504: nop
+        imem[3394] = 32'h00000013; // 00403508: nop
+        imem[3395] = 32'h00000013; // 0040350c: nop
+        imem[3396] = 32'h56808093; // 00403510: addi x1, x1, 1384
+        imem[3397] = 32'h00000013; // 00403514: nop
+        imem[3398] = 32'h00000013; // 00403518: nop
+        imem[3399] = 32'h00000013; // 0040351c: nop
+        imem[3400] = 32'h00000013; // 00403520: nop
+        imem[3401] = 32'h000001b7; // 00403524: lui x3, 0x0
+        imem[3402] = 32'h00000013; // 00403528: nop
+        imem[3403] = 32'h00000013; // 0040352c: nop
+        imem[3404] = 32'h00000013; // 00403530: nop
+        imem[3405] = 32'h00000013; // 00403534: nop
+        imem[3406] = 32'h02a18193; // 00403538: addi x3, x3, 42
+        imem[3407] = 32'h00000013; // 0040353c: nop
+        imem[3408] = 32'h00000013; // 00403540: nop
+        imem[3409] = 32'h00000013; // 00403544: nop
+        imem[3410] = 32'h00000013; // 00403548: nop
+        imem[3411] = 32'h00c082e7; // 0040354c: jalr x5, 12(x1)
+        imem[3412] = 32'h00000013; // 00403550: nop
+        imem[3413] = 32'h00000013; // 00403554: nop
+        imem[3414] = 32'h00000013; // 00403558: nop
+        imem[3415] = 32'h00000013; // 0040355c: nop
+        imem[3416] = 32'h06300193; // 00403560: wrong-path poison: must be skipped
+        imem[3417] = 32'h00000013; // 00403564: nop
+        imem[3418] = 32'h00000013; // 00403568: nop
+        imem[3419] = 32'h00000013; // 0040356c: nop
+        imem[3420] = 32'h00000013; // 00403570: nop
+        imem[3421] = 32'h00000013; // 00403574: nop
+        imem[3422] = 32'h00000013; // 00403578: nop
+        imem[3423] = 32'h00000013; // 0040357c: nop
+        imem[3424] = 32'h00000013; // 00403580: nop
+        imem[3425] = 32'h1c5a2823; // 00403584: CHECK 116: jalr imm=12 oddbase=0 rd=5 link
+        imem[3426] = 32'h00000013; // 00403588: nop
+        imem[3427] = 32'h00000013; // 0040358c: nop
+        imem[3428] = 32'h00000013; // 00403590: nop
+        imem[3429] = 32'h00000013; // 00403594: nop
+        imem[3430] = 32'h1c3a2a23; // 00403598: CHECK 117: jalr imm=12 oddbase=0 rd=5 skips poison
+        imem[3431] = 32'h00000013; // 0040359c: nop
+        imem[3432] = 32'h00000013; // 004035a0: nop
+        imem[3433] = 32'h00000013; // 004035a4: nop
+        imem[3434] = 32'h00000013; // 004035a8: nop
+        imem[3435] = 32'h004030b7; // 004035ac: lui x1, 0x403
+        imem[3436] = 32'h00000013; // 004035b0: nop
+        imem[3437] = 32'h00000013; // 004035b4: nop
+        imem[3438] = 32'h00000013; // 004035b8: nop
+        imem[3439] = 32'h00000013; // 004035bc: nop
+        imem[3440] = 32'h63008093; // 004035c0: addi x1, x1, 1584
+        imem[3441] = 32'h00000013; // 004035c4: nop
+        imem[3442] = 32'h00000013; // 004035c8: nop
+        imem[3443] = 32'h00000013; // 004035cc: nop
+        imem[3444] = 32'h00000013; // 004035d0: nop
+        imem[3445] = 32'h000001b7; // 004035d4: lui x3, 0x0
+        imem[3446] = 32'h00000013; // 004035d8: nop
+        imem[3447] = 32'h00000013; // 004035dc: nop
+        imem[3448] = 32'h00000013; // 004035e0: nop
+        imem[3449] = 32'h00000013; // 004035e4: nop
+        imem[3450] = 32'h02a18193; // 004035e8: addi x3, x3, 42
+        imem[3451] = 32'h00000013; // 004035ec: nop
+        imem[3452] = 32'h00000013; // 004035f0: nop
+        imem[3453] = 32'h00000013; // 004035f4: nop
+        imem[3454] = 32'h00000013; // 004035f8: nop
+        imem[3455] = 32'hff4082e7; // 004035fc: jalr x5, -12(x1)
+        imem[3456] = 32'h00000013; // 00403600: nop
+        imem[3457] = 32'h00000013; // 00403604: nop
+        imem[3458] = 32'h00000013; // 00403608: nop
+        imem[3459] = 32'h00000013; // 0040360c: nop
+        imem[3460] = 32'h06300193; // 00403610: wrong-path poison: must be skipped
+        imem[3461] = 32'h00000013; // 00403614: nop
+        imem[3462] = 32'h00000013; // 00403618: nop
+        imem[3463] = 32'h00000013; // 0040361c: nop
+        imem[3464] = 32'h00000013; // 00403620: nop
+        imem[3465] = 32'h00000013; // 00403624: nop
+        imem[3466] = 32'h00000013; // 00403628: nop
+        imem[3467] = 32'h00000013; // 0040362c: nop
+        imem[3468] = 32'h00000013; // 00403630: nop
+        imem[3469] = 32'h1c5a2c23; // 00403634: CHECK 118: jalr imm=-12 oddbase=0 rd=5 link
+        imem[3470] = 32'h00000013; // 00403638: nop
+        imem[3471] = 32'h00000013; // 0040363c: nop
+        imem[3472] = 32'h00000013; // 00403640: nop
+        imem[3473] = 32'h00000013; // 00403644: nop
+        imem[3474] = 32'h1c3a2e23; // 00403648: CHECK 119: jalr imm=-12 oddbase=0 rd=5 skips poison
+        imem[3475] = 32'h00000013; // 0040364c: nop
+        imem[3476] = 32'h00000013; // 00403650: nop
+        imem[3477] = 32'h00000013; // 00403654: nop
+        imem[3478] = 32'h00000013; // 00403658: nop
+        imem[3479] = 32'h004030b7; // 0040365c: lui x1, 0x403
+        imem[3480] = 32'h00000013; // 00403660: nop
+        imem[3481] = 32'h00000013; // 00403664: nop
+        imem[3482] = 32'h00000013; // 00403668: nop
+        imem[3483] = 32'h00000013; // 0040366c: nop
+        imem[3484] = 32'h6d508093; // 00403670: addi x1, x1, 1749
+        imem[3485] = 32'h00000013; // 00403674: nop
+        imem[3486] = 32'h00000013; // 00403678: nop
+        imem[3487] = 32'h00000013; // 0040367c: nop
+        imem[3488] = 32'h00000013; // 00403680: nop
+        imem[3489] = 32'h000001b7; // 00403684: lui x3, 0x0
+        imem[3490] = 32'h00000013; // 00403688: nop
+        imem[3491] = 32'h00000013; // 0040368c: nop
+        imem[3492] = 32'h00000013; // 00403690: nop
+        imem[3493] = 32'h00000013; // 00403694: nop
+        imem[3494] = 32'h02a18193; // 00403698: addi x3, x3, 42
+        imem[3495] = 32'h00000013; // 0040369c: nop
+        imem[3496] = 32'h00000013; // 004036a0: nop
+        imem[3497] = 32'h00000013; // 004036a4: nop
+        imem[3498] = 32'h00000013; // 004036a8: nop
+        imem[3499] = 32'h000082e7; // 004036ac: jalr x5, 0(x1)
+        imem[3500] = 32'h00000013; // 004036b0: nop
+        imem[3501] = 32'h00000013; // 004036b4: nop
+        imem[3502] = 32'h00000013; // 004036b8: nop
+        imem[3503] = 32'h00000013; // 004036bc: nop
+        imem[3504] = 32'h06300193; // 004036c0: wrong-path poison: must be skipped
+        imem[3505] = 32'h00000013; // 004036c4: nop
+        imem[3506] = 32'h00000013; // 004036c8: nop
+        imem[3507] = 32'h00000013; // 004036cc: nop
+        imem[3508] = 32'h00000013; // 004036d0: nop
+        imem[3509] = 32'h00000013; // 004036d4: nop
+        imem[3510] = 32'h00000013; // 004036d8: nop
+        imem[3511] = 32'h00000013; // 004036dc: nop
+        imem[3512] = 32'h00000013; // 004036e0: nop
+        imem[3513] = 32'h1e5a2023; // 004036e4: CHECK 120: jalr imm=0 oddbase=1 rd=5 link
+        imem[3514] = 32'h00000013; // 004036e8: nop
+        imem[3515] = 32'h00000013; // 004036ec: nop
+        imem[3516] = 32'h00000013; // 004036f0: nop
+        imem[3517] = 32'h00000013; // 004036f4: nop
+        imem[3518] = 32'h1e3a2223; // 004036f8: CHECK 121: jalr imm=0 oddbase=1 rd=5 skips poison
+        imem[3519] = 32'h00000013; // 004036fc: nop
+        imem[3520] = 32'h00000013; // 00403700: nop
+        imem[3521] = 32'h00000013; // 00403704: nop
+        imem[3522] = 32'h00000013; // 00403708: nop
+        imem[3523] = 32'h004030b7; // 0040370c: lui x1, 0x403
+        imem[3524] = 32'h00000013; // 00403710: nop
+        imem[3525] = 32'h00000013; // 00403714: nop
+        imem[3526] = 32'h00000013; // 00403718: nop
+        imem[3527] = 32'h00000013; // 0040371c: nop
+        imem[3528] = 32'h78308093; // 00403720: addi x1, x1, 1923
+        imem[3529] = 32'h00000013; // 00403724: nop
+        imem[3530] = 32'h00000013; // 00403728: nop
+        imem[3531] = 32'h00000013; // 0040372c: nop
+        imem[3532] = 32'h00000013; // 00403730: nop
+        imem[3533] = 32'h000001b7; // 00403734: lui x3, 0x0
+        imem[3534] = 32'h00000013; // 00403738: nop
+        imem[3535] = 32'h00000013; // 0040373c: nop
+        imem[3536] = 32'h00000013; // 00403740: nop
+        imem[3537] = 32'h00000013; // 00403744: nop
+        imem[3538] = 32'h02a18193; // 00403748: addi x3, x3, 42
+        imem[3539] = 32'h00000013; // 0040374c: nop
+        imem[3540] = 32'h00000013; // 00403750: nop
+        imem[3541] = 32'h00000013; // 00403754: nop
+        imem[3542] = 32'h00000013; // 00403758: nop
+        imem[3543] = 32'h001082e7; // 0040375c: jalr x5, 1(x1)
+        imem[3544] = 32'h00000013; // 00403760: nop
+        imem[3545] = 32'h00000013; // 00403764: nop
+        imem[3546] = 32'h00000013; // 00403768: nop
+        imem[3547] = 32'h00000013; // 0040376c: nop
+        imem[3548] = 32'h06300193; // 00403770: wrong-path poison: must be skipped
+        imem[3549] = 32'h00000013; // 00403774: nop
+        imem[3550] = 32'h00000013; // 00403778: nop
+        imem[3551] = 32'h00000013; // 0040377c: nop
+        imem[3552] = 32'h00000013; // 00403780: nop
+        imem[3553] = 32'h00000013; // 00403784: nop
+        imem[3554] = 32'h00000013; // 00403788: nop
+        imem[3555] = 32'h00000013; // 0040378c: nop
+        imem[3556] = 32'h00000013; // 00403790: nop
+        imem[3557] = 32'h1e5a2423; // 00403794: CHECK 122: jalr imm=1 oddbase=0 rd=5 link
+        imem[3558] = 32'h00000013; // 00403798: nop
+        imem[3559] = 32'h00000013; // 0040379c: nop
+        imem[3560] = 32'h00000013; // 004037a0: nop
+        imem[3561] = 32'h00000013; // 004037a4: nop
+        imem[3562] = 32'h1e3a2623; // 004037a8: CHECK 123: jalr imm=1 oddbase=0 rd=5 skips poison
+        imem[3563] = 32'h00000013; // 004037ac: nop
+        imem[3564] = 32'h00000013; // 004037b0: nop
+        imem[3565] = 32'h00000013; // 004037b4: nop
+        imem[3566] = 32'h00000013; // 004037b8: nop
+        imem[3567] = 32'h004040b7; // 004037bc: lui x1, 0x404
+        imem[3568] = 32'h00000013; // 004037c0: nop
+        imem[3569] = 32'h00000013; // 004037c4: nop
+        imem[3570] = 32'h00000013; // 004037c8: nop
+        imem[3571] = 32'h00000013; // 004037cc: nop
+        imem[3572] = 32'h83408093; // 004037d0: addi x1, x1, -1996
+        imem[3573] = 32'h00000013; // 004037d4: nop
+        imem[3574] = 32'h00000013; // 004037d8: nop
+        imem[3575] = 32'h00000013; // 004037dc: nop
+        imem[3576] = 32'h00000013; // 004037e0: nop
+        imem[3577] = 32'h000001b7; // 004037e4: lui x3, 0x0
+        imem[3578] = 32'h00000013; // 004037e8: nop
+        imem[3579] = 32'h00000013; // 004037ec: nop
+        imem[3580] = 32'h00000013; // 004037f0: nop
+        imem[3581] = 32'h00000013; // 004037f4: nop
+        imem[3582] = 32'h02a18193; // 004037f8: addi x3, x3, 42
+        imem[3583] = 32'h00000013; // 004037fc: nop
+        imem[3584] = 32'h00000013; // 00403800: nop
+        imem[3585] = 32'h00000013; // 00403804: nop
+        imem[3586] = 32'h00000013; // 00403808: nop
+        imem[3587] = 32'h000080e7; // 0040380c: jalr x1, 0(x1)
+        imem[3588] = 32'h00000013; // 00403810: nop
+        imem[3589] = 32'h00000013; // 00403814: nop
+        imem[3590] = 32'h00000013; // 00403818: nop
+        imem[3591] = 32'h00000013; // 0040381c: nop
+        imem[3592] = 32'h06300193; // 00403820: wrong-path poison: must be skipped
+        imem[3593] = 32'h00000013; // 00403824: nop
+        imem[3594] = 32'h00000013; // 00403828: nop
+        imem[3595] = 32'h00000013; // 0040382c: nop
+        imem[3596] = 32'h00000013; // 00403830: nop
+        imem[3597] = 32'h00000013; // 00403834: nop
+        imem[3598] = 32'h00000013; // 00403838: nop
+        imem[3599] = 32'h00000013; // 0040383c: nop
+        imem[3600] = 32'h00000013; // 00403840: nop
+        imem[3601] = 32'h1e1a2823; // 00403844: CHECK 124: jalr imm=0 oddbase=0 rd=1 link
+        imem[3602] = 32'h00000013; // 00403848: nop
+        imem[3603] = 32'h00000013; // 0040384c: nop
+        imem[3604] = 32'h00000013; // 00403850: nop
+        imem[3605] = 32'h00000013; // 00403854: nop
+        imem[3606] = 32'h1e3a2a23; // 00403858: CHECK 125: jalr imm=0 oddbase=0 rd=1 skips poison
+        imem[3607] = 32'h00000013; // 0040385c: nop
+        imem[3608] = 32'h00000013; // 00403860: nop
+        imem[3609] = 32'h00000013; // 00403864: nop
+        imem[3610] = 32'h00000013; // 00403868: nop
+        imem[3611] = 32'h004040b7; // 0040386c: lui x1, 0x404
+        imem[3612] = 32'h00000013; // 00403870: nop
+        imem[3613] = 32'h00000013; // 00403874: nop
+        imem[3614] = 32'h00000013; // 00403878: nop
+        imem[3615] = 32'h00000013; // 0040387c: nop
+        imem[3616] = 32'h8e408093; // 00403880: addi x1, x1, -1820
+        imem[3617] = 32'h00000013; // 00403884: nop
+        imem[3618] = 32'h00000013; // 00403888: nop
+        imem[3619] = 32'h00000013; // 0040388c: nop
+        imem[3620] = 32'h00000013; // 00403890: nop
+        imem[3621] = 32'h000001b7; // 00403894: lui x3, 0x0
+        imem[3622] = 32'h00000013; // 00403898: nop
+        imem[3623] = 32'h00000013; // 0040389c: nop
+        imem[3624] = 32'h00000013; // 004038a0: nop
+        imem[3625] = 32'h00000013; // 004038a4: nop
+        imem[3626] = 32'h02a18193; // 004038a8: addi x3, x3, 42
+        imem[3627] = 32'h00000013; // 004038ac: nop
+        imem[3628] = 32'h00000013; // 004038b0: nop
+        imem[3629] = 32'h00000013; // 004038b4: nop
+        imem[3630] = 32'h00000013; // 004038b8: nop
+        imem[3631] = 32'h00008067; // 004038bc: jalr x0, 0(x1)
+        imem[3632] = 32'h00000013; // 004038c0: nop
+        imem[3633] = 32'h00000013; // 004038c4: nop
+        imem[3634] = 32'h00000013; // 004038c8: nop
+        imem[3635] = 32'h00000013; // 004038cc: nop
+        imem[3636] = 32'h06300193; // 004038d0: wrong-path poison: must be skipped
+        imem[3637] = 32'h00000013; // 004038d4: nop
+        imem[3638] = 32'h00000013; // 004038d8: nop
+        imem[3639] = 32'h00000013; // 004038dc: nop
+        imem[3640] = 32'h00000013; // 004038e0: nop
+        imem[3641] = 32'h00000013; // 004038e4: nop
+        imem[3642] = 32'h00000013; // 004038e8: nop
+        imem[3643] = 32'h00000013; // 004038ec: nop
+        imem[3644] = 32'h00000013; // 004038f0: nop
+        imem[3645] = 32'h1e0a2c23; // 004038f4: CHECK 126: jalr imm=0 oddbase=0 rd=0 link
+        imem[3646] = 32'h00000013; // 004038f8: nop
+        imem[3647] = 32'h00000013; // 004038fc: nop
+        imem[3648] = 32'h00000013; // 00403900: nop
+        imem[3649] = 32'h00000013; // 00403904: nop
+        imem[3650] = 32'h1e3a2e23; // 00403908: CHECK 127: jalr imm=0 oddbase=0 rd=0 skips poison
+        imem[3651] = 32'h00000013; // 0040390c: nop
+        imem[3652] = 32'h00000013; // 00403910: nop
+        imem[3653] = 32'h00000013; // 00403914: nop
+        imem[3654] = 32'h00000013; // 00403918: nop
+        imem[3655] = 32'h600d60b7; // 0040391c: lui x1, 0x600d6
+        imem[3656] = 32'h00000013; // 00403920: nop
+        imem[3657] = 32'h00000013; // 00403924: nop
+        imem[3658] = 32'h00000013; // 00403928: nop
+        imem[3659] = 32'h00000013; // 0040392c: nop
+        imem[3660] = 32'h00d08093; // 00403930: addi x1, x1, 13
+        imem[3661] = 32'h00000013; // 00403934: nop
+        imem[3662] = 32'h00000013; // 00403938: nop
+        imem[3663] = 32'h00000013; // 0040393c: nop
+        imem[3664] = 32'h00000013; // 00403940: nop
+        imem[3665] = 32'h001b2023; // 00403944: completion marker
+        imem[3666] = 32'h00000013; // 00403948: nop
+        imem[3667] = 32'h00000013; // 0040394c: nop
+        imem[3668] = 32'h00000013; // 00403950: nop
+        imem[3669] = 32'h00000013; // 00403954: nop
+        imem[3670] = 32'h0000006f; // 00403958: halt: jal x0, 0
+        imem[3671] = 32'h00000013; // 0040395c: nop
+        imem[3672] = 32'h00000013; // 00403960: nop
+        imem[3673] = 32'h00000013; // 00403964: nop
+        imem[3674] = 32'h00000013; // 00403968: nop
+        expected[114] = 32'h004034a0; test_name[114] = "jalr imm=0 oddbase=0 rd=5 link";
+        expected[115] = 32'h0000002a; test_name[115] = "jalr imm=0 oddbase=0 rd=5 skips poison";
+        expected[116] = 32'h00403550; test_name[116] = "jalr imm=12 oddbase=0 rd=5 link";
+        expected[117] = 32'h0000002a; test_name[117] = "jalr imm=12 oddbase=0 rd=5 skips poison";
+        expected[118] = 32'h00403600; test_name[118] = "jalr imm=-12 oddbase=0 rd=5 link";
+        expected[119] = 32'h0000002a; test_name[119] = "jalr imm=-12 oddbase=0 rd=5 skips poison";
+        expected[120] = 32'h004036b0; test_name[120] = "jalr imm=0 oddbase=1 rd=5 link";
+        expected[121] = 32'h0000002a; test_name[121] = "jalr imm=0 oddbase=1 rd=5 skips poison";
+        expected[122] = 32'h00403760; test_name[122] = "jalr imm=1 oddbase=0 rd=5 link";
+        expected[123] = 32'h0000002a; test_name[123] = "jalr imm=1 oddbase=0 rd=5 skips poison";
+        expected[124] = 32'h00403810; test_name[124] = "jalr imm=0 oddbase=0 rd=1 link";
+        expected[125] = 32'h0000002a; test_name[125] = "jalr imm=0 oddbase=0 rd=1 skips poison";
+        expected[126] = 32'h00000000; test_name[126] = "jalr imm=0 oddbase=0 rd=0 link";
+        expected[127] = 32'h0000002a; test_name[127] = "jalr imm=0 oddbase=0 rd=0 skips poison";
         repeat (5) @(negedge CLK);
         RESET = 0;  // away from the active clock edge
     end
