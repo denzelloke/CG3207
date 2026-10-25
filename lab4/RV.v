@@ -56,13 +56,17 @@ module RV #(
     reg  [31:0] PC_IN;
     wire        Busy;
     assign WE_PC = ~Busy;
+    wire [ 1:0] PCSrc_E;
+    reg  [31:0] PC_E;
+    reg  [31:0] ExtImm_E;
+    reg  [31:0] RD1_E;
 
     always @(*) begin
         case (PCSrc_E)
             2'b00:   PC_IN = PC_F + 32'd4;  // non-control
             2'b01:   PC_IN = PC_E + ExtImm_E;  // jal
-            2'b11:   PC_IN = (RD1_E + ExtImm_E) & ~32'd1;  // jalr
-            default: PC_IN = PC_F + 32'd4;  // default case
+            2'b11:   PC_IN = (RD1_fwd + ExtImm_E) & ~32'd1;  // jalr
+            default: PC_IN = PC_F + 32'd4;
         endcase
     end
 
@@ -101,18 +105,17 @@ module RV #(
 
     // regfile signals
     wire        WE;
-    wire [ 4:0] rs1;
-    wire [ 4:0] rs2;
+    wire [ 4:0] rs1_D;
+    wire [ 4:0] rs2_D;
     wire [ 4:0] rd_D;
     wire [31:0] WD;
     wire [31:0] RD1_D;
     wire [31:0] RD2_D;
-    reg         RegWrite_W;
     reg  [ 3:0] ALUControl_W;
 
-    assign rs1  = Instr_D[19:15];
-    assign rs2  = Instr_D[24:20];
-    assign rd_D = Instr_D[11:7];
+    assign rs1_D = Instr_D[19:15];
+    assign rs2_D = Instr_D[24:20];
+    assign rd_D  = Instr_D[11:7];
 
 
     // extend module signals
@@ -131,14 +134,16 @@ module RV #(
     reg  [ 3:0] ALUControl_E;
     reg  [ 1:0] ALUSrcA_E;
     reg  [ 1:0] ALUSrcB_E;
-    reg  [31:0] RD1_E;
     reg  [31:0] RD2_E;
-    reg  [31:0] ExtImm_E;
     reg  [ 4:0] rd_E;
     reg  [ 2:0] Funct3_E;
-    reg  [31:0] PC_E;
     wire [31:0] ALUResult_E;
     reg  [ 1:0] MCycleOp_E;
+    reg  [ 4:0] rs1_E;
+    reg  [ 4:0] rs2_E;
+    reg  [ 1:0] ForwardA_E;
+    reg  [ 1:0] ForwardB_E;
+    wire [31:0] Result_W;
 
 
     always @(posedge CLK) begin
@@ -157,6 +162,8 @@ module RV #(
             PC_E         <= 0;
             PCS_E        <= 0;
             MCycleOp_E   <= 0;
+            rs1_E        <= 0;
+            rs2_E        <= 0;
         end
         else if (!Busy) begin
             RegWrite_E   <= RegWrite_D;
@@ -173,6 +180,8 @@ module RV #(
             PC_E         <= PC_D;
             PCS_E        <= PCS_D;
             MCycleOp_E   <= MCycleOp_D;
+            rs1_E        <= rs1_D;
+            rs2_E        <= rs2_D;
         end
     end
 
@@ -183,25 +192,41 @@ module RV #(
     // alu signals
     reg [31:0] Src_A;
     reg [31:0] Src_B;
+    reg [31:0] RD1_fwd;
+    reg [31:0] RD2_fwd;
+
     always @(*) begin
-        Src_A = RD1_E;
-        Src_B = RD2_E;
-        case (ALUSrcA_E)
-            2'b00, 2'b10: Src_A = RD1_E;  // DP Reg (incl mcycle), DP Imm, load, store, branch
-            2'b11: Src_A = PC_E;  // jal, auipc, jalr
-            2'b01: Src_A = 32'b0;  //lui
+        // data fwd rd1
+        case (ForwardA_E)
+            2'b01:   RD1_fwd = Result_W;  // W->E data fwding
+            2'b10:   RD1_fwd = ALUResult_M;  // M->E data fwding
+            default: RD1_fwd = RD1_E;  // no fwding
         endcase
+
+        // src A selection
+        case (ALUSrcA_E)
+            2'b01:   Src_A = 0;
+            2'b11:   Src_A = PC_E;
+            default: Src_A = RD1_fwd;
+        endcase
+
+        // data fwd rd2
+        case (ForwardB_E)
+            2'b01:   RD2_fwd = Result_W;  // W->E data fwding
+            2'b10:   RD2_fwd = ALUResult_M;  // M->E data fwding
+            default: RD2_fwd = RD2_E;  // no fwding
+        endcase
+
+        // src B selection
         case (ALUSrcB_E)
-            2'b00, 2'b10: Src_B = RD2_E;  // DP Reg (incl mcycle), branch
-            2'b11:        Src_B = ExtImm_E;  // DP Imm, load, store, auipc, lui
-            2'b01:        Src_B = 32'd4;  // jal, jalr
+            2'b01:   Src_B = 32'd4;
+            2'b11:   Src_B = ExtImm_E;
+            default: Src_B = RD2_fwd;
         endcase
     end
 
     // pc_logic signals
     wire [ 2:0] ALUFlags;
-    wire [ 1:0] PCSrc_E;
-
 
     // MEMORY STAGE ===============================================================================
 
@@ -210,6 +235,9 @@ module RV #(
     reg         MemWrite_M;
     reg  [31:0] WriteData_M;
     reg  [ 4:0] rd_M;
+    reg  [ 4:0] rs2_M;
+
+
 
     always @(posedge CLK) begin
         if (RESET) begin
@@ -219,27 +247,31 @@ module RV #(
             ALUResult_M <= 0;
             WriteData_M <= 0;
             rd_M        <= 0;
+            rs2_M       <= 0;
         end
         else if (!Busy) begin
             RegWrite_M  <= RegWrite_E;
             MemtoReg_M  <= MemtoReg_E;
             MemWrite_M  <= MemWrite_E;
             ALUResult_M <= ALUResult_E;
-            WriteData_M <= RD2_E;
+            WriteData_M <= RD2_fwd;
             rd_M        <= rd_E;
+            rs2_M       <= rs2_E;
         end
 
     end
 
-    assign WriteData_out = WriteData_M;  // Change datapath as appropriate if supporting sb/sh
+    wire Forward_M;
+    assign WriteData_out = (Forward_M) ? Result_W : WriteData_M;  // mem-mem copy
     assign MemWrite_out  = {4{MemWrite_M && !Busy && !RESET}};
 
 
     // WRITEBACK STAGE ===============================================================================
 
+    reg        RegWrite_W;
     reg        MemtoReg_W;
-    reg [31:0] ALUResult_W;
     reg [31:0] ReadData_W;
+    reg [31:0] ALUResult_W;
     reg [ 4:0] rd_W;
 
     always @(posedge CLK) begin
@@ -261,7 +293,8 @@ module RV #(
     end
 
     // regfile signals (write)
-    assign WD = (MemtoReg_W) ? ReadData_W : ALUResult_W;
+    assign Result_W = (MemtoReg_W) ? ReadData_W : ALUResult_W;
+    assign WD = Result_W;
     assign WE = RegWrite_W && WE_PC && !RESET; // regfile doesnt stall even if we_pc = 0. cos regfile writes on posedge & we=1
 
     assign MemRead = MemtoReg_M && !Busy && !RESET; // This is needed for the proper functionality of some devices such as UART CONSOLE
@@ -273,8 +306,22 @@ module RV #(
                                          // supporting lb/sb/lbu/lh/sh/lhu/lw/sw. Hint: funct3
 
 
+    // hazard control unit
+    // ForwardA_E
+    always @(*) begin
+        if ((rs1_E == rd_M) && (RegWrite_M) && (rd_M != 0)) ForwardA_E = 2'b10;  // M->E fwding
+        else if ((rs1_E == rd_W) && (RegWrite_W) && (rd_W != 0)) ForwardA_E = 2'b01;  // W->E fwding
+        else ForwardA_E = 2'b00;  // no fwding
+    end
+    // ForwardB_E
+    always @(*) begin
+        if ((rs2_E == rd_M) && (RegWrite_M) && (rd_M != 0)) ForwardB_E = 2'b10;  // M->E fwding
+        else if ((rs2_E == rd_W) && (RegWrite_W) && (rd_W != 0)) ForwardB_E = 2'b01;  // W->E fwding
+        else ForwardB_E = 2'b00;  // no fwding
+    end
 
-
+    assign Forward_M = (rs2_M == rd_W) && (MemWrite_M) && (MemtoReg_W && RegWrite_W) && (rd_W != 0);
+    // checks for clash (same reg), second operation is sw, first operation is lw, lw rd is not x0.
 
     // FETCH ================
 
@@ -308,8 +355,8 @@ module RV #(
     RegFile RegFile1 (
         CLK,
         WE,
-        rs1,
-        rs2,
+        rs1_D,
+        rs2_D,
         rd_W,
         WD,
         RD1_D,
