@@ -29,7 +29,7 @@ module ERegister (
 always @(posedge CLK) begin 
     if (FLUSH) begin 
         func3E <= 3'b0;
-        PCSE <= 2'b0
+        PCSE <= 2'b0;
         RegWriteE <= 0;
         MemtoRegE <= 0;
         MemWriteE <= 0;
