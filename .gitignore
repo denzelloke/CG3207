@@ -14,3 +14,9 @@
 # Vivado project file
 *.xpr
 **/*.xpr
+
+# Vivado temporary files
+.Xil/
+*.str
+*.pb
+*.dcp

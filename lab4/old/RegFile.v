@@ -55,7 +55,7 @@ module RegFile(
     end 
     
     // write
-    always@(negedge CLK)
+    always@(posedge CLK)
     begin
         if((rd != 5'b00000) & (WE))
             RegBank[rd] <= WD ;
