@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wave_config>
+   <wave_state>
+   </wave_state>
+   <db_ref_list>
+      <db_ref path="test_MCycle_behav.wdb" id="1">
+         <top_modules>
+            <top_module name="glbl" />
+            <top_module name="test_MCycle" />
+         </top_modules>
+      </db_ref>
+   </db_ref_list>
+   <zoom_setting>
+      <ZoomStartTime time="0.000 ns"></ZoomStartTime>
+      <ZoomEndTime time="1,402.001 ns"></ZoomEndTime>
+      <Cursor1Time time="8,796.000 ns"></Cursor1Time>
+   </zoom_setting>
+   <column_width_setting>
+      <NameColumnWidth column_width="142"></NameColumnWidth>
+      <ValueColumnWidth column_width="86"></ValueColumnWidth>
+   </column_width_setting>
+   <WVObjectSize size="11" />
+   <wvobject type="logic" fp_name="/test_MCycle/CLK">
+      <obj_property name="ElementShortName">CLK</obj_property>
+      <obj_property name="ObjectShortName">CLK</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/test_MCycle/RESET">
+      <obj_property name="ElementShortName">RESET</obj_property>
+      <obj_property name="ObjectShortName">RESET</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/test_MCycle/Start">
+      <obj_property name="ElementShortName">Start</obj_property>
+      <obj_property name="ObjectShortName">Start</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/test_MCycle/MCycleOp">
+      <obj_property name="ElementShortName">MCycleOp[1:0]</obj_property>
+      <obj_property name="ObjectShortName">MCycleOp[1:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/test_MCycle/Operand1">
+      <obj_property name="ElementShortName">Operand1[31:0]</obj_property>
+      <obj_property name="ObjectShortName">Operand1[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/test_MCycle/Operand2">
+      <obj_property name="ElementShortName">Operand2[31:0]</obj_property>
+      <obj_property name="ObjectShortName">Operand2[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/test_MCycle/Result1">
+      <obj_property name="ElementShortName">Result1[31:0]</obj_property>
+      <obj_property name="ObjectShortName">Result1[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/test_MCycle/Result2">
+      <obj_property name="ElementShortName">Result2[31:0]</obj_property>
+      <obj_property name="ObjectShortName">Result2[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/test_MCycle/Busy">
+      <obj_property name="ElementShortName">Busy</obj_property>
+      <obj_property name="ObjectShortName">Busy</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/test_MCycle/tests">
+      <obj_property name="ElementShortName">tests[31:0]</obj_property>
+      <obj_property name="ObjectShortName">tests[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/test_MCycle/failures">
+      <obj_property name="ElementShortName">failures[31:0]</obj_property>
+      <obj_property name="ObjectShortName">failures[31:0]</obj_property>
+   </wvobject>
+</wave_config>
