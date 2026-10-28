@@ -86,6 +86,9 @@ module MCycle #(
     reg [width-1:0] n_Result1;
     reg [width-1:0] n_Result2;
 
+    reg SavedDividendNegative;
+    reg SavedQuotientNegative;
+
     always @(*) begin : IDLE_PROCESS
         // default outputs
         Busy = 1'b0;
@@ -249,12 +252,12 @@ module MCycle #(
 
                     // if we doing signed div, and if operand signs are diff
                     // make quotient negative 
-                    if (~MCycleOp[0] & (Operand1[width-1] ^ Operand2[width-1])) begin
+                    if (!MCycleOp[0] && SavedQuotientNegative && (n_shifted_op2[width-1:0] != {width{1'b0}})) begin
                         n_Result1 = ~n_Result1 + 1;
                     end
 
                     // make remainder negative if Op1 (dividend) sign bit = 1
-                    if (~MCycleOp[0] & Operand1[width-1]) n_Result2 = ~n_Result2 + 1;
+                    if (!MCycleOp[0] && SavedDividendNegative) n_Result2 = ~n_Result2 + 1;
                 end
 
                 else n_count = n_count + 1;
@@ -276,6 +279,12 @@ module MCycle #(
         M <= n_M;
         Q <= n_Q;
         Q_previous_bit <= n_Q_previous_bit;
+
+        if ((state == IDLE) && Start && !RESET) begin
+            SavedDividendNegative <= Operand1[width-1];
+
+            SavedQuotientNegative <= Operand1[width-1] ^ Operand2[width-1];
+        end
     end
 
 endmodule
