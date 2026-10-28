@@ -35,7 +35,7 @@ module PC_Logic( // This is a combinational module, unlike ARM. See the note bel
 	input [1:0] PCS,	// 00 for non-control, 01 for conditional branch, 10 for jal, 11 for jalr
 	input [2:0] Funct3,	// condition specified in the instruction (eq / ne / lt / ge / ltu / geu)
 	input [2:0] ALUFlags, 	// {eq, lt, ltu}
-	output reg [1:0] PCSrc	// will need to be expanded to 2 bits to support jalr
+	output reg [2:0] PCSrc	// will need to be expanded to 2 bits to support jalr
     );
     
     /* 
@@ -48,31 +48,31 @@ module PC_Logic( // This is a combinational module, unlike ARM. See the note bel
 	// Conditional logic is as follows
 	always @ (*) begin
 	case (PCS)							
-	    2'b00: PCSrc = 2'b00;					//non-control
+	    2'b00: PCSrc = 3'b000;					//non-control
 		2'b01: if (Funct3 == 3'b000) begin		// beq
-			PCSrc = {1'b0, ALUFlags[2]};
+			PCSrc = {2'b0, ALUFlags[2]};
 		end
 		else if (Funct3 == 3'b001) begin		// bne
-			PCSrc = {1'b0, ~ALUFlags[2]};
+			PCSrc = {2'b0, ~ALUFlags[2]};
 		end
 		else if (Funct3 == 3'b100) begin		// blt
-			PCSrc = {1'b0, ALUFlags[1]};
+			PCSrc = {2'b0, ALUFlags[1]};
 		end
 		else if (Funct3 == 3'b101) begin		// bge
-			PCSrc = {1'b0, ~ALUFlags[1]};
+			PCSrc = {2'b0, ~ALUFlags[1]};
 		end
 		else if (Funct3 == 3'b110) begin		// bltu
-			PCSrc = {1'b0, ALUFlags[0]};
+			PCSrc = {2'b0, ALUFlags[0]};
 		end
 		else if (Funct3 == 3'b111) begin		// bgeu
-			PCSrc = {1'b0, ~ALUFlags[0]};
+			PCSrc = {2'b0, ~ALUFlags[0]};
 		end
 		else begin
-			PCSrc = 2'b00;						//default
+			PCSrc = 3'b000;						//default
 		end
-		2'b10: PCSrc = 2'b01;					// jal
-		2'b11: PCSrc = 2'b11;					//jalr
-		default: PCSrc = 2'b00;                 //default
+		2'b10: PCSrc = 3'b011;					//jal
+		2'b11: PCSrc = 3'b111;					//jalr
+		default: PCSrc = 3'b000;                 //default
 	endcase
 	end	
 endmodule
