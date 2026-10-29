@@ -41,7 +41,7 @@ module RV #(
     input [31:0] Instr,
     input [31:0] ReadData_in,  // Name mangled to support lb/lbu/lh/lhu
     output MemRead,
-    output [3:0] MemWrite_out,  // Column-wise write enable to support sb/sw. Each column is a byte.
+    output [3:0] WriteMask,  // Column-wise write enable to support sb/sw. Each column is a byte.
     output [31:0] PCF,
     output [31:0] ALUResult,
     output [31:0] WriteData_out  // Name mangled to support sb/sw
@@ -70,6 +70,7 @@ module RV #(
     wire        RegWriteD, MemtoRegD, MemWriteD;
     wire [3:0]  ALUControlD;
     wire [1:0]  ALUSrcAD, ALUSrcBD;
+    wire [2:0]  SizeSelD;
     wire [1:0]  MCycleOpD;
     wire        UsesRs1D, UsesRs2D;
 
@@ -84,6 +85,7 @@ module RV #(
     wire        RegWriteE, MemtoRegE, MemWriteE;
     wire [3:0]  ALUControlE;
     wire [1:0]  ALUSrcAE, ALUSrcBE;
+    wire [2:0]  SizeSelE;
     wire [31:0] RD1E, RD2E;
     wire [31:0] ExtImmE;
     wire [4:0]  rdE;
@@ -96,7 +98,7 @@ module RV #(
     wire [31:0] RD1FwdE;
     wire [31:0] WriteDataE;
     wire [31:0] ALUResultE;
-    wire [31:0] EREGResult;
+    wire [31:0] ERegResult;
     wire [2:0]  ALUFlags;
     wire [1:0]  PCSrcE;
 
@@ -118,7 +120,7 @@ module RV #(
     wire [4:0]  rdM;
     reg  [4:0]  rs2M;
     wire [31:0] WriteData;
-    wire [2:0]  SizeSel;  // Reserved for byte/half-word access support.
+    wire [2:0]  SizeSelM;  
 
     // Write-back stage and register-file write port
     wire        RegWriteW, MemtoRegW;
@@ -219,7 +221,7 @@ module RV #(
 
     assign WriteDataE = SrcB_tmp;
     assign RD1FwdE    = SrcA_tmp;
-    assign EREGResult = (ALUControlE == 4'b1111) ? MCycle_res : ALUResultE;
+    assign ERegResult = (ALUControlE == 4'b1111) ? MCycle_res : ALUResultE;
 
     // -------------------------------------------------------------------------
     // Execute stage: multi-cycle multiply/divide control and result selection
@@ -286,10 +288,25 @@ module RV #(
     // For lb/lbu/lh/lhu/sb/sh, derive SizeSel from the decoder (funct3), carry
     // it through the pipeline, and update load extension, store-data alignment,
     // and byte-write enables. See Lab 4 Enhancement: additional instructions.
-    assign SizeSel       = 3'b010;
-    assign ReadDataM     = ReadData_in;
-    assign WriteData_out = WriteData;
-    assign MemWrite_out  = {4{MemWriteM}};
+
+    // assign ReadDataM     = ReadData_in;
+    // assign WriteData_out = WriteData;
+    // assign WriteMask  = {4{MemWriteM}};
+
+    // todo: change ReadDataM so that it zero extends / sign extends ReadData_in by the right amount according to SizeSelM
+    // todo: change WriteMask so that only the appropriate bytes are write enabled
+
+    Subword Subword1 (
+        MemtoRegM,       // 1 for load
+        MemWriteM,       // 1 for store
+        SizeSelM,  
+        ALUResultM[1:0], // stores readwrite address
+        ReadData_in,     // full word read from data mem block
+        WriteData,       // raw word to be masked before write
+        ReadDataM,   
+        WriteMask,       // basically a writemask. idk why they didnt js call it that
+        WriteData_out    // full word written to data mem block
+    );
 
     // -------------------------------------------------------------------------
     // Write-back stage
@@ -303,7 +320,7 @@ module RV #(
 
     DRegister DRegister1 (
         CLK,
-        !StallD,
+        StallD,
         FlushD,
         InstrF,
         PCF,
@@ -323,6 +340,7 @@ module RV #(
         ALUControlD,
         ALUSrcAD,
         ALUSrcBD,
+        SizeSelD,
         RD1D_P,
         RD2D_P,
         ExtImmD,
@@ -336,6 +354,7 @@ module RV #(
         ALUControlE,
         ALUSrcAE,
         ALUSrcBE,
+        SizeSelE,
         RD1E,
         RD2E,
         ExtImmE,
@@ -350,12 +369,14 @@ module RV #(
         RegWriteE,
         MemtoRegE, 
         MemWriteE,
-        EREGResult,
+        SizeSelE,
+        ERegResult,
         WriteDataE,
         rdE,
         RegWriteM, 
         MemtoRegM, 
         MemWriteM,
+        SizeSelM,
         ALUResultM, 
         WriteDataM,
         rdM
@@ -448,7 +469,8 @@ module RV #(
         ALUSrcBD,
         ImmSrc,
         ALUControlD,
-        MCycleOpD
+        MCycleOpD,
+        SizeSelD
     );
 
     PC_Logic PC_Logic1 (

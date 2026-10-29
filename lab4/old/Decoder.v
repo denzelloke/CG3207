@@ -43,9 +43,10 @@ module Decoder (
     output reg [1:0] ALUSrcB,		// Asserted by all instructions which use an immediate (load, store, lui, auipc, DPImm). Needs to be expanded to a 2-bit signal to support link functionality jal, jalr. Change wire width in RV.v as well
     output reg [2:0] ImmSrc,  // 000 U, 010 UJ, 011 I, 110 S, 111 SB.
     output reg [3:0] ALUControl,	// 0000 add, 0001 sub, 1110 and, 1100 or, 0010 sll, 1010 srl, 1011 sra, 0001 branch, 0000 all others.
-    output reg [1:0] MCycleOp // 00 signed multiplication, 01 unsigned multiplication, 10 signed division, 11 unsigned division.
+    output reg [1:0] MCycleOp, // 00 signed multiplication, 01 unsigned multiplication, 10 signed division, 11 unsigned division.
     // Note that the most significant 3 bits are Funct3 all DP instrns. LSB is the same as Funct7[5] DPReg type and DPImm_shifts. For other DPImms, Funct7[5] is 0.
     // It is the same as sub branches, and add all others not mentioned in the line above.
+    output reg [2:0] SizeSel // 0 byte || 1 halfword (S) || 2 word || 4 byte || 5 halfword (U) || ill use 7 as "not memory operation" || 3 is for doubleword, not supported
 );
 
 
@@ -89,6 +90,7 @@ module Decoder (
                 ImmSrc   = 3'b000;
                 if (Funct7 == 7'b0000001) ALUControl = 4'b1111;
                 else ALUControl = {Funct3, Funct7[5]};
+                SizeSel = 3'b111;
             end
 
             // DP Imm
@@ -102,30 +104,7 @@ module Decoder (
                 ImmSrc = 3'b011;  // I type
                 ALUControl[3:1] = Funct3;
                 ALUControl[0] = (Funct3 == 3'h5) ? Funct7[5] : 1'b0;
-            end
-
-            // load 
-            7'h03: begin
-                PCS        = 2'b00;
-                MemtoReg   = 1;
-                RegWrite   = 1;
-                MemWrite   = 0;
-                ALUSrcA    = 2'b00;
-                ALUSrcB    = 2'b11;
-                ImmSrc     = 3'b011;  // I type
-                ALUControl = 4'b0000;  // add
-            end
-
-            // store 
-            7'h23: begin
-                PCS        = 2'b00;
-                MemtoReg   = 0;
-                RegWrite   = 0;
-                MemWrite   = 1;
-                ALUSrcA    = 2'b00;
-                ALUSrcB    = 2'b11;
-                ImmSrc     = 3'b110;  // S type
-                ALUControl = 4'b0000;  // add
+                SizeSel = 3'b111;
             end
 
             // branch 
@@ -138,6 +117,7 @@ module Decoder (
                 ALUSrcB    = 2'b00;
                 ImmSrc     = 3'b111;  // B type
                 ALUControl = 4'b0001;  // sub
+                SizeSel    = 3'b111;
             end
 
             // jal 
@@ -150,6 +130,7 @@ module Decoder (
                 ALUSrcB    = 2'b01;
                 ImmSrc     = 3'b010;  // J type
                 ALUControl = 4'b0000;  // add
+                SizeSel    = 3'b111;
             end
 
             // auipc 
@@ -162,6 +143,7 @@ module Decoder (
                 ALUSrcB    = 2'b11;
                 ImmSrc     = 3'b000;  // U type
                 ALUControl = 4'b0000;  // add
+                SizeSel    = 3'b111;
             end
 
             // lui 
@@ -174,6 +156,7 @@ module Decoder (
                 ALUSrcB    = 2'b11;
                 ImmSrc     = 3'b000;  // U type
                 ALUControl = 4'b0000;  // add
+                SizeSel    = 3'b111;
             end
 
             // jalr
@@ -186,6 +169,35 @@ module Decoder (
                 ALUSrcB    = 2'b01;
                 ImmSrc     = 3'b011;  // I type
                 ALUControl = 4'b0000;  // add
+                SizeSel    = 3'b111;
+            end
+
+            // load 
+            7'h03: begin
+                PCS = 2'b00;
+                MemtoReg = 1;
+                RegWrite = (Funct3 == 3'h0 || Funct3 == 3'h1 || Funct3 == 3'h2 || Funct3 == 3'h4 || Funct3 == 3'h5) ? 1 : 0;
+                MemWrite = 0;
+                ALUSrcA = 2'b00;
+                ALUSrcB = 2'b11;
+                ImmSrc = 3'b011;  // I type
+                ALUControl = 4'b0000;  // add
+                SizeSel    = (Funct3 == 3'h0 || Funct3 == 3'h1 || Funct3 == 3'h2 || Funct3 == 3'h4 || Funct3 == 3'h5) ? Funct3 : 3'b111;
+                // 0 byte || 1 halfword (S) || 2 word || 4 byte (U) || 5 halfword (U) || ill use 7 as "not memory operation"
+            end
+
+            // store 
+            7'h23: begin
+                PCS = 2'b00;
+                MemtoReg = 0;
+                RegWrite = 0;
+                MemWrite = (Funct3 == 3'h0 || Funct3 == 3'h1 || Funct3 == 3'h2) ? 1 : 0;
+                ALUSrcA = 2'b00;
+                ALUSrcB = 2'b11;
+                ImmSrc = 3'b110;  // S type
+                ALUControl = 4'b0000;  // add
+                SizeSel = (Funct3 == 3'h0 || Funct3 == 3'h1 || Funct3 == 3'h2) ? Funct3 : 3'b111;
+                // 0 byte || 1 halfword (S) || 2 word || ill use 7 as "not memory operation"
             end
 
             // default
@@ -198,10 +210,10 @@ module Decoder (
                 ALUSrcB    = 2'b00;
                 ImmSrc     = 3'b000;
                 ALUControl = 4'b0000;
+                SizeSel    = 3'b111;
             end
         endcase
     end
 endmodule
-
 
 
