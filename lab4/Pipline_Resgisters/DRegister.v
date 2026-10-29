@@ -4,7 +4,7 @@
 
 module DRegister (
     input CLK,
-    input EN,
+    input STALL,
     input FLUSH,
     input [31:0] InstrF,
     input [31:0] PCF,
@@ -12,14 +12,15 @@ module DRegister (
     output reg [31:0] InstrD
 );
 
-always @(posedge CLK) begin 
-    if (FLUSH) begin 
-        InstrD <= 32'b0;
-        PCD <= 32'b0;
-    end else if (EN) begin
-        PCD <= PCF;
-        InstrD <= InstrF;
+    always @(posedge CLK) begin
+        if (FLUSH) begin
+            InstrD <= 32'b0;
+            PCD    <= 32'b0;
+        end
+        else if (!STALL) begin
+            PCD    <= PCF;
+            InstrD <= InstrF;
+        end
     end
-end
 
 endmodule

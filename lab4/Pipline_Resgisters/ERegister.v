@@ -26,36 +26,39 @@ module ERegister (
     output reg [31:0] PCE
 );
 
-always @(posedge CLK) begin 
-    if (FLUSH) begin 
-        func3E <= 3'b0;
-        PCSE <= 2'b0;
-        RegWriteE <= 0;
-        MemtoRegE <= 0;
-        MemWriteE <= 0;
-        ALUControlE <= 4'b0;
-        ALUSrcAE <= 2'b0;
-        ALUSrcBE <= 2'b0;
-        RD1E <= 4'b0;
-        RD2E <= 4'b0;
-        ExtImmE <= 32'b0;
-        rdE <= 4'b0;
-        PCE <= 32'b0;
-    end else if (!STALL) begin
-        func3E     <= func3D;
-        PCSE       <= PCSD;
-        RegWriteE  <= RegWriteD;
-        MemtoRegE  <= MemtoRegD;
-        MemWriteE  <= MemWriteD;
-        ALUControlE <= ALUControlD;
-        ALUSrcAE   <= ALUSrcAD;
-        ALUSrcBE   <= ALUSrcBD;
-        RD1E       <= RD1D;
-        RD2E       <= RD2D;
-        ExtImmE    <= ExtImmD;
-        rdE        <= rdD;
-        PCE        <= PCD;
+    always @(posedge CLK) begin
+        if (FLUSH) begin
+            func3E      <= 3'b0;
+            PCSE        <= 2'b0;
+            RegWriteE   <= 0;
+            MemtoRegE   <= 0;
+            MemWriteE   <= 0;
+            ALUControlE <= 4'b0;
+            ALUSrcAE    <= 2'b0;
+            ALUSrcBE    <= 2'b0;
+            RD1E        <= 4'b0;
+            RD2E        <= 4'b0;
+            ExtImmE     <= 32'b0;
+            rdE         <= 4'b0;
+            PCE         <= 32'b0;
+            SizeSelE    <= 3'b111;
+        end
+        else if (!STALL) begin
+            func3E      <= func3D;
+            PCSE        <= PCSD;
+            RegWriteE   <= RegWriteD;
+            MemtoRegE   <= MemtoRegD;
+            MemWriteE   <= MemWriteD;
+            ALUControlE <= ALUControlD;
+            ALUSrcAE    <= ALUSrcAD;
+            ALUSrcBE    <= ALUSrcBD;
+            RD1E        <= RD1D;
+            RD2E        <= RD2D;
+            ExtImmE     <= ExtImmD;
+            rdE         <= rdD;
+            PCE         <= PCD;
+            SizeSelE    <= SizeSelD;
+        end
     end
-end
 
 endmodule
