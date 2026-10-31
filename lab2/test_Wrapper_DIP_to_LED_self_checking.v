@@ -198,4 +198,173 @@ module test_Wrapper #(
        #5 CLK = ~CLK ; // invert clk every 5 time units 
     end
     
+    integer i;
+    integer tests = 0;
+    integer failures = 0;
+    reg [31:0] expected [0:7];
+    
+    // Encode ADDI.
+    function [31:0] enc_addi;
+        input [4:0] rd;
+        input [4:0] rs1;
+        input [11:0] imm;
+        begin
+            enc_addi = {imm, rs1, 3'b000, rd, 7'b0010011};
+        end
+    endfunction
+    
+    // Encode an M-extension instruction.
+    // funct3: 000=mul, 100=div, 101=divu
+    function [31:0] enc_m;
+        input [2:0] funct3;
+        input [4:0] rd;
+        input [4:0] rs1;
+        input [4:0] rs2;
+        begin
+            enc_m = {7'b0000001, rs2, rs1, funct3,
+                     rd, 7'b0110011};
+        end
+    endfunction
+    
+    // Encode: sw rs2, 0x80(x31)
+    // x31 holds MMIO_BASE, so this writes the seven-segment register.
+    function [31:0] enc_display;
+        input [4:0] rs2;
+        begin
+            enc_display = {7'b0000100, rs2, 5'd31,
+                           3'b010, 5'b00000, 7'b0100011};
+        end
+    endfunction
+    
+    initial begin
+        RESET = 1'b1;
+        DIP = 0;
+        PB = 0;
+        UART_TX_ready = 1'b1;
+        UART_RX_valid = 1'b0;
+    
+        expected[0] = 32'd60;          // 20 * 3
+        expected[1] = 32'hFFFFFFC4;    // -20 * 3 = -60
+        expected[2] = 32'hFFFFFFFE;    // unsigned FFFFFFFF * 2, low word
+        expected[3] = 32'd6;           // signed 20 / 3
+        expected[4] = 32'hFFFFFFFA;    // signed -20 / 3 = -6
+        expected[5] = 32'd6;           // unsigned 20 / 3
+        expected[6] = 32'h7FFFFFFF;    // unsigned FFFFFFFF / 2
+        expected[7] = 32'd20;          // dependent mul then div, rd=rs1
+    
+        // Wait until Wrapper's time-zero memory loading has finished.
+        #1;
+    
+        // Replace the simulated IROM with this test program.
+        // These changes affect simulation only.
+        for (i = 0; i < 64; i = i + 1)
+            dut.IROM[i] = 32'h00000013; // NOP
+    
+        // lui x31, 0xFFFF0 -> MMIO base 0xFFFF0000
+        dut.IROM[0] = 32'hFFFF0FB7;
+    
+        // 1. Positive multiplication: 20 * 3 = 60
+        dut.IROM[1] = enc_addi(5'd1, 5'd0, 12'd20);
+        dut.IROM[2] = enc_addi(5'd2, 5'd0, 12'd3);
+        dut.IROM[3] = enc_m(3'b000, 5'd3, 5'd1, 5'd2);
+        dut.IROM[4] = enc_display(5'd3);
+    
+        // 2. Negative multiplication: -20 * 3 = -60
+        dut.IROM[5] = enc_addi(5'd1, 5'd0, 12'hFEC); // -20
+        dut.IROM[6] = enc_m(3'b000, 5'd3, 5'd1, 5'd2);
+        dut.IROM[7] = enc_display(5'd3);
+    
+        // 3. Unsigned interpretation: FFFFFFFF * 2 -> FFFFFFFE
+        dut.IROM[8]  = enc_addi(5'd1, 5'd0, 12'hFFF); // FFFFFFFF
+        dut.IROM[9]  = enc_addi(5'd2, 5'd0, 12'd2);
+        dut.IROM[10] = enc_m(3'b000, 5'd3, 5'd1, 5'd2);
+        dut.IROM[11] = enc_display(5'd3);
+    
+        // 4. Signed positive division: 20 / 3 = 6
+        dut.IROM[12] = enc_addi(5'd1, 5'd0, 12'd20);
+        dut.IROM[13] = enc_addi(5'd2, 5'd0, 12'd3);
+        dut.IROM[14] = enc_m(3'b100, 5'd3, 5'd1, 5'd2);
+        dut.IROM[15] = enc_display(5'd3);
+    
+        // 5. Signed negative division: -20 / 3 = -6
+        dut.IROM[16] = enc_addi(5'd1, 5'd0, 12'hFEC);
+        dut.IROM[17] = enc_m(3'b100, 5'd3, 5'd1, 5'd2);
+        dut.IROM[18] = enc_display(5'd3);
+    
+        // 6. Unsigned division: 20 / 3 = 6
+        dut.IROM[19] = enc_addi(5'd1, 5'd0, 12'd20);
+        dut.IROM[20] = enc_m(3'b101, 5'd3, 5'd1, 5'd2);
+        dut.IROM[21] = enc_display(5'd3);
+    
+        // 7. Unsigned high-bit case: FFFFFFFF / 2 = 7FFFFFFF
+        dut.IROM[22] = enc_addi(5'd1, 5'd0, 12'hFFF);
+        dut.IROM[23] = enc_addi(5'd2, 5'd0, 12'd2);
+        dut.IROM[24] = enc_m(3'b101, 5'd3, 5'd1, 5'd2);
+        dut.IROM[25] = enc_display(5'd3);
+    
+        // 8. Back-to-back operations, destination also a source:
+        // mul x1, x1, x2 -> x1 = 60
+        // div x1, x1, x2 -> x1 = 20
+        dut.IROM[26] = enc_addi(5'd1, 5'd0, 12'd20);
+        dut.IROM[27] = enc_addi(5'd2, 5'd0, 12'd3);
+        dut.IROM[28] = enc_m(3'b000, 5'd1, 5'd1, 5'd2);
+        dut.IROM[29] = enc_m(3'b100, 5'd1, 5'd1, 5'd2);
+        dut.IROM[30] = enc_display(5'd1);
+    
+        // jal x0, 0: stay here indefinitely.
+        dut.IROM[31] = 32'h0000006F;
+    
+        repeat (3) @(negedge CLK);
+        RESET = 1'b0;
+    end
+    
+    // Check each store to the seven-segment MMIO register.
+    // These internal signal names match your supplied Wrapper.
+    always @(posedge CLK) begin
+        if (!RESET &&
+            dut.MemWrite_out === 4'b1111 &&
+            dut.ALUResult === 32'hFFFF0080) begin
+    
+            if (tests >= 8) begin
+                $fatal(1, "Unexpected additional display write");
+            end
+            else begin
+                if (dut.WriteData_out === expected[tests])
+                    $display("PASS %0d: CPU stored %h",
+                             tests + 1, dut.WriteData_out);
+                else begin
+                    failures = failures + 1;
+                    $display("FAIL %0d: expected=%h actual=%h",
+                             tests + 1, expected[tests],
+                             dut.WriteData_out);
+                end
+    
+                // Let the MMIO output register update.
+                #1;
+                if (SEVENSEGHEX !== expected[tests]) begin
+                    failures = failures + 1;
+                    $display("FAIL: seven-segment register=%h expected=%h",
+                             SEVENSEGHEX, expected[tests]);
+                end
+    
+                tests = tests + 1;
+    
+                if (tests == 8) begin
+                    if (failures == 0) begin
+                        $display("ALL 8 CPU INTEGRATION TESTS PASSED");
+                        $finish;
+                    end
+                    else
+                        $fatal(1, "CPU tests completed with %0d failures",
+                               failures);
+                end
+            end
+        end
+    end
+    
+    initial begin
+        #100000;
+        $fatal(1, "TIMEOUT: only %0d of 8 tests completed", tests);
+    end
+    
 endmodule

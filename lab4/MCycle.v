@@ -86,9 +86,8 @@ module MCycle #(
     reg [width-1:0] n_Result1;
     reg [width-1:0] n_Result2;
 
-    // Preserve launch-time signs while forwarded operand inputs can change.
-    reg operand1_sign, operand2_sign;
-    reg n_operand1_sign, n_operand2_sign;
+    reg SavedDividendNegative;
+    reg SavedQuotientNegative;
 
     always @(*) begin : IDLE_PROCESS
         // default outputs
@@ -128,17 +127,6 @@ module MCycle #(
         n_Q = Q;
         n_Q_previous_bit = Q_previous_bit;
         booth_bits = 3'b000;
-
-        n_operand1_sign = operand1_sign;
-        n_operand2_sign = operand2_sign;
-        if (RESET) begin
-            n_operand1_sign = 1'b0;
-            n_operand2_sign = 1'b0;
-        end
-        else if ((state == IDLE) && (n_state == COMPUTING)) begin
-            n_operand1_sign = Operand1[width-1];
-            n_operand2_sign = Operand2[width-1];
-        end
 
         // n_state == COMPUTING and state == IDLE implies we are just transitioning into COMPUTING
         if( RESET | (n_state == COMPUTING & state == IDLE) ) begin // 2nd condition is true during the very 1st clock cycle of the multiplication
@@ -264,12 +252,12 @@ module MCycle #(
 
                     // if we doing signed div, and if operand signs are diff
                     // make quotient negative 
-                    if (~MCycleOp[0] & (n_operand1_sign ^ n_operand2_sign)) begin
+                    if (!MCycleOp[0] && SavedQuotientNegative && (n_shifted_op2[width-1:0] != {width{1'b0}})) begin
                         n_Result1 = ~n_Result1 + 1;
                     end
 
                     // make remainder negative if Op1 (dividend) sign bit = 1
-                    if (~MCycleOp[0] & n_operand1_sign) n_Result2 = ~n_Result2 + 1;
+                    if (!MCycleOp[0] && SavedDividendNegative) n_Result2 = ~n_Result2 + 1;
                 end
 
                 else n_count = n_count + 1;
@@ -291,8 +279,12 @@ module MCycle #(
         M <= n_M;
         Q <= n_Q;
         Q_previous_bit <= n_Q_previous_bit;
-        operand1_sign <= n_operand1_sign;
-        operand2_sign <= n_operand2_sign;
+
+        if ((state == IDLE) && Start && !RESET) begin
+            SavedDividendNegative <= Operand1[width-1];
+
+            SavedQuotientNegative <= Operand1[width-1] ^ Operand2[width-1];
+        end
     end
 
 endmodule
