@@ -11,8 +11,7 @@ input [31:0] PCE, // Which instruc is this for update
 input ActualTakenE, //taken or not, deduce from E 
 input [31:0] ActualTargetE, //where it would jump if taken
 input isJumpE, // jal instructions only
-output [31:0] PredictedNextPCF,
-output predictedTakenF,
+output [31:0] PredictedNextPCF
 );
 
 //BTB info 
@@ -28,6 +27,7 @@ reg [1:0] counter_table [0:31];
 // tmp terms
 wire [4:0] indexF, indexE;
 wire [24:0] tagF, tagE;
+wire predictedTakenF;
 wire matched;
 
 integer i;
@@ -43,12 +43,13 @@ assign tagE = PCE[31:7];
 assign matched = valid_table[indexF] && (tag_table[indexF] == tagF); 
 
 //branch is taken if there is a matching entry and it is a jal or the weakly/strongly taken signal
-assign predictedTakenF = !RESET && matched && (jump_table[indexF || counter_table[indexF][1]]);
+assign predictedTakenF = !RESET && matched && (jump_table[indexF] || counter_table[indexF][1]);
+assign PredictedNextPCF = predictedTakenF ? target_table[indexF] : (PCF + 32'd4);
 
 //EXECUTE RETURN UPDATE STAGE
-always @(CLK) begin
+always @(posedge CLK) begin
     if (RESET) begin
-        for (i = 0; i <32; i++) begin
+        for (i = 0; i <32; i = i + 1) begin
             valid_table[i] <= 1'b0;
             valid_table[i]   <= 1'b0;
             tag_table[i]     <= 25'd0;
@@ -57,7 +58,7 @@ always @(CLK) begin
             counter_table[i] <= 2'b01; //weakly not taken
         end
     end else if (UpdateEnableE) begin //E returns with info
-        valid_table[indexE] <= 1'b0;
+        valid_table[indexE] <= 1'b1;
         tag_table[indexE] <= tagE;
         target_table[indexE] <= ActualTargetE;
         jump_table[indexE] <= isJumpE;

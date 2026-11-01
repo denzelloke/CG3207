@@ -54,7 +54,11 @@ module RV #(
     // Fetch stage
     wire [31:0] InstrF;
     wire        WE_PC;
-    reg  [31:0] PC_IN;
+    wire [31:0] PC_IN;
+
+    //Fetch stage: Branch prediction
+    wire [31:0] PredictedNextPCF;
+    wire predictedTakenF;
 
     // Decode stage: instruction fields and control
     wire [31:0] InstrD;
@@ -77,6 +81,11 @@ module RV #(
     // Decode stage: register operands and W-to-D forwarding
     wire [31:0] RD1D, RD2D;
     wire [31:0] RD1D_P, RD2D_P;
+
+    // Decode Stage: Branch Prediction
+    wire [31:0] PredictedNextPCD;
+    wire isJumpD, isBranchD;
+    reg ValidD;
 
     // Execute stage: pipelined control and operands
     wire [31:0] PCE;
@@ -112,6 +121,16 @@ module RV #(
     wire [31:0] Result1, Result2;
     reg  [31:0] MCycle_res;
 
+    // Execute stage:Branch Prediction
+    wire UpdateEnableE;
+    wire ActualTakenE;
+    wire [31:0] ActualTargetE;
+    wire isJumpE, isBranchE, NotNOPE;
+    reg ValidE;
+    wire MispredictE;
+    wire [31:0] PredictedNextPCE;
+    reg [31:0] ActualNextPCE;
+
     // Memory stage and external memory interface
     wire        RegWriteM, MemtoRegM, MemWriteM;
     wire [31:0] ALUResultM;
@@ -143,16 +162,30 @@ module RV #(
     // -------------------------------------------------------------------------
 
     assign InstrF = Instr;
-    assign WE_PC  = !StallF;
+    assign WE_PC  = MispredictE || !StallF;
 
     always @(*) begin
         case (PCSrcE)
-            2'b00:   PC_IN = PCF + 32'd4;                 // Sequential execution
-            2'b01:   PC_IN = PCE + ExtImmE;               // PC-relative target
-            2'b11:   PC_IN = (RD1FwdE + ExtImmE) & ~32'd1; // jalr; clear bit 0
-            default: PC_IN = PCF + 32'd4;
+            2'b00:   ActualNextPCE = PCF + 32'd4;                 // Sequential execution
+            2'b01:   ActualNextPCE = PCE + ExtImmE;               // PC-relative target
+            2'b11:   ActualNextPCE = (RD1FwdE + ExtImmE) & ~32'd1; // jalr; clear bit 0
+            default: ActualNextPCE = PCF + 32'd4;
         endcase
     end
+
+    assign PC_IN = MispredictE ? ActualNextPCE : PredictedNextPCF; 
+
+    BranchPredictor BranchPredictor1(
+        CLK,
+        RESET,
+        PCF,
+        UpdateEnableE,
+        PCE,
+        ActualTakenE,
+        ActualTargetE,
+        isJumpE,
+        PredictedNextPCF
+    );
 
     // -------------------------------------------------------------------------
     // Decode stage: instruction fields and operand forwarding
@@ -168,7 +201,9 @@ module RV #(
 
     assign RD1D_P = Forward1D ? ResultW : RD1D;
     assign RD2D_P = Forward2D ? ResultW : RD2D;
-
+    assign isBranchD = (Opcode == 7'b1100011);    
+    assign isJumpD = (Opcode == 7'b1101111) || (Opcode == 7'b1100111);    
+    
     // Source-register usage for hazard detection.
     assign UsesRs1D =
         (Opcode == 7'b0110011) ||  // Register ALU, including multiply/divide
@@ -254,20 +289,41 @@ module RV #(
     end
 
     // -------------------------------------------------------------------------
+    // Execute stage: Branch Prediction
+    // -------------------------------------------------------------------------
+
+    assign NotNOPE = ValidE && !StallE && !RESET;
+    assign UpdateEnableE = NotNOPE && (isJumpE || isBranchE); //update only if branch or jal or jalr
+    assign ActualTakenE = PCSrcE[0]; //bit 0 means taken
+    assign ActualTargetE = (PCSrcE == 2'b11) ? ((RD1FwdE + ExtImmE) & ~32'd1) : (PCE + ExtImmE); //is it Jalr or normal branch
+    assign MispredictE = NotNOPE && (ActualNextPCE != PredictedNextPCE); //use this for flush
+
+
+    // -------------------------------------------------------------------------
     // Auxiliary pipeline registers for hazard and multi-cycle control
     // -------------------------------------------------------------------------
 
     always @(posedge CLK) begin
-        if (FlushE) begin
+        if (RESET || FlushD) begin
+            ValidD <= 1'b0;
+        end else if (!StallD) begin
+            ValidD <= 1'b1;
+        end
+
+        if (RESET || FlushE) begin
             rs1E      <= 5'd0;
             rs2E      <= 5'd0;
             MCycleOpE <= 2'b00;
+            ValidE <= 1'b0;
         end
         else if (!StallE) begin
             rs1E      <= rs1D;
             rs2E      <= rs2D;
             MCycleOpE <= MCycleOpD;
+            ValidE <= ValidD;
         end
+
+
 
         if (FlushM)
             rs2M <= 5'd0;
@@ -324,7 +380,9 @@ module RV #(
         FlushD,
         InstrF,
         PCF,
+        PredictedNextPCF,
         PCD,
+        PredictedNextPCD,
         InstrD
     );
 
@@ -334,6 +392,7 @@ module RV #(
         StallE,
         func3D,
         PCSD,
+        PredictedNextPCD,
         RegWriteD,
         MemtoRegD,
         MemWriteD,
@@ -346,8 +405,11 @@ module RV #(
         ExtImmD,
         rdD,
         PCD,
+        isJumpD,
+        isBranchD,
         func3E,
         PCSE,
+        PredictedNextPCE,
         RegWriteE,
         MemtoRegE,
         MemWriteE,
@@ -359,7 +421,9 @@ module RV #(
         RD2E,
         ExtImmE,
         rdE,
-        PCE
+        PCE,
+        isJumpE,
+        isBranchE
     );
     
 
@@ -406,7 +470,7 @@ module RV #(
         rdM,
         rdW,
         MemtoRegE,
-        PCSrcE,
+        MispredictE,
         RegWriteM,
         MemWriteM,
         RegWriteW,

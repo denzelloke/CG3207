@@ -8,22 +8,28 @@ module ERegister (
     input STALL,
     input [2:0] func3D,
     input [1:0] PCSD,
+    input [31:0] PredictedNextPCD,
     input RegWriteD, MemtoRegD, MemWriteD,
     input [3:0] ALUControlD,
     input [1:0] ALUSrcAD, ALUSrcBD,
+    input [2:0] SizeSelD,
     input [31:0] RD1D, RD2D,
     input [31:0] ExtImmD,
     input [4:0] rdD,
     input [31:0] PCD,
+    input isJumpD, isBranchD,
     output reg [2:0] func3E,
     output reg [1:0] PCSE,
+    output reg [31:0] PredictedNextPCE,
     output reg RegWriteE, MemtoRegE, MemWriteE,
     output reg [3:0] ALUControlE,
     output reg [1:0] ALUSrcAE, ALUSrcBE,
+    output reg [2:0] SizeSelE,
     output reg [31:0] RD1E, RD2E,
     output reg [31:0] ExtImmE,
     output reg [4:0] rdE,
-    output reg [31:0] PCE
+    output reg [31:0] PCE,
+    output reg isJumpE, isBranchE
 );
 
     always @(posedge CLK) begin
@@ -42,6 +48,9 @@ module ERegister (
             rdE         <= 4'b0;
             PCE         <= 32'b0;
             SizeSelE    <= 3'b111;
+            PredictedNextPCE <= 32'b0;
+            isJumpE <= 1'b0;
+            isBranchE <= 1'b0;
         end
         else if (!STALL) begin
             func3E      <= func3D;
@@ -58,6 +67,9 @@ module ERegister (
             rdE         <= rdD;
             PCE         <= PCD;
             SizeSelE    <= SizeSelD;
+            PredictedNextPCE <= PredictedNextPCD;
+            isJumpE <= isJumpD;
+            isBranchE <= isBranchD;
         end
     end
 

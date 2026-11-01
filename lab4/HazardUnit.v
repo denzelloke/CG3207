@@ -8,7 +8,7 @@ input [4:0] rs1E, rs2E, rdE,
 input [4:0] rs2M, rdM,
 input [4:0] rdW,
 input MemtoRegE,
-input [1:0] PCSrcE,
+input MispredictE,
 input RegWriteM, MemWriteM,
 input RegWriteW, MemtoRegW,
 input UsesRs1D, UsesRs2D,
@@ -56,7 +56,7 @@ assign LwStall = ((((rs1D == rdE) & UsesRs1D) | ((rs2D == rdE) & UsesRs2D)) & Me
 assign Forward1D = ((rs1D == rdW) & RegWriteW & (rdW != 0));
 assign Forward2D = ((rs2D == rdW) & RegWriteW & (rdW != 0));
 
-assign RedirectE = (PCSrcE != 2'b00) && !MCYCLESTALL;
+assign RedirectE = MispredictE && !MCYCLESTALL;
 
 assign StallF = LwStall || MCYCLESTALL;
 assign StallD = LwStall || MCYCLESTALL;
