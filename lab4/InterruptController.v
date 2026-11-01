@@ -1,5 +1,6 @@
 `timescale 1ns / 1ps
 
+//Handles which source (timer or button) caused the interrupt
 //Instantiated and used by Wrapper to generate IRQs
 //Uses Timer module, Button press is asserted by TOP_Nexys
 module InterruptController (
