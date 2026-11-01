@@ -1,6 +1,7 @@
 `timescale 1ns / 1ps
 
-//Used to generate ticks that the game will operate on. Uses the CPU's CLK, but counts clock cycles independently of what instructions the CPU is executing 
+//Used to generate ticks that the game will operate on. Uses the CPU's CLK, but counts clock cycles independently of what instructions the CPU is executing
+//instatiated and used in Wrapper.v
 module Timer (
     input CLK,                    // Same clock as the CPU; each rising edge is one timer counting step.
     input RESET,                  // Clears the timer's counters and saved settings; disables the timer.
@@ -16,7 +17,7 @@ module Timer (
                                   // Captured with Period when ConfigureWritePulse is 1.
                                   // Changing this input alone does not change the saved setting.
 
-    output reg TimerEvent,            // One-clock pulse whenever a complete interval has elapsed.
+    output reg TimerEvent,        // One-clock pulse whenever a complete interval has elapsed.
                                   // Goes to InterruptController, which remembers the event until acknowledged.
 
     output reg [31:0] TicksCounter// Total number of timer events generated since RESET—not CPU clock cycles.
