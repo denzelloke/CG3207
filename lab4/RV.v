@@ -100,6 +100,7 @@ module RV #(
     wire [4:0]  rdE;
     reg  [4:0]  rs1E, rs2E;
     reg  [1:0]  MCycleOpE;
+    wire MulHSU;
 
     // Execute stage: forwarding, ALU, and branch datapath
     reg  [31:0] SrcA_tmp, SrcB_tmp;
@@ -153,6 +154,7 @@ module RV #(
     // Hazard control
     wire        StallF, StallD, StallE;
     wire        FlushD, FlushE, FlushM;
+    wire        ClearD, ClearE, ClearM;
     wire        Forward1D, Forward2D;
     wire [1:0]  ForwardAE, ForwardBE;
     wire        ForwardM;
@@ -166,10 +168,10 @@ module RV #(
 
     always @(*) begin
         case (PCSrcE)
-            2'b00:   ActualNextPCE = PCF + 32'd4;                 // Sequential execution
+            2'b00:   ActualNextPCE = PCE + 32'd4;                 // Sequential execution
             2'b01:   ActualNextPCE = PCE + ExtImmE;               // PC-relative target
             2'b11:   ActualNextPCE = (RD1FwdE + ExtImmE) & ~32'd1; // jalr; clear bit 0
-            default: ActualNextPCE = PCF + 32'd4;
+            default: ActualNextPCE = PCE + 32'd4;
         endcase
     end
 
@@ -265,6 +267,7 @@ module RV #(
     assign Operand1  = SrcA_tmp;
     assign Operand2  = SrcB_tmp;
     assign IsMCycleE = (ALUControlE == 4'b1111);
+    assign MulHSU = (IsMCycleE && (func3E == 3'b010));
 
     // Issue Start only once for the instruction held in Execute.
     assign Start = IsMCycleE && !MCycleStarted && !RESET;
@@ -323,13 +326,15 @@ module RV #(
             ValidE <= ValidD;
         end
 
-
-
         if (FlushM)
             rs2M <= 5'd0;
         else
             rs2M <= rs2E;
     end
+
+    assign ClearD = RESET || FlushD;
+    assign ClearE = RESET || FlushE;
+    assign ClearM = RESET || FlushM;
 
     // -------------------------------------------------------------------------
     // Memory stage: external interface and W-to-M store-data forwarding
@@ -377,7 +382,7 @@ module RV #(
     DRegister DRegister1 (
         CLK,
         StallD,
-        FlushD,
+        ClearD,
         InstrF,
         PCF,
         PredictedNextPCF,
@@ -388,7 +393,7 @@ module RV #(
 
     ERegister ERegister1 (
         CLK,
-        FlushE,
+        ClearE,
         StallE,
         func3D,
         PCSD,
@@ -429,7 +434,7 @@ module RV #(
 
     MRegister Mregister1 (
         CLK,
-        FlushM,
+        ClearM,
         RegWriteE,
         MemtoRegE, 
         MemWriteE,
@@ -499,6 +504,7 @@ module RV #(
         MCycleOpE,
         Operand1,
         Operand2,
+        MulHSU,
         Result1,
         Result2,
         Busy
