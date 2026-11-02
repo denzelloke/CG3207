@@ -8,7 +8,9 @@ module DRegister (
     input FLUSH,
     input [31:0] InstrF,
     input [31:0] PCF,
+    input [31:0] PredictedNextPCF,
     output reg [31:0] PCD,
+    output reg [31:0] PredictedNextPCD,
     output reg [31:0] InstrD
 );
 
@@ -16,10 +18,12 @@ module DRegister (
         if (FLUSH) begin
             InstrD <= 32'b0;
             PCD    <= 32'b0;
+            PredictedNextPCD <= 32'b0;
         end
         else if (!STALL) begin
             PCD    <= PCF;
             InstrD <= InstrF;
+            PredictedNextPCD <= PredictedNextPCF;
         end
     end
 

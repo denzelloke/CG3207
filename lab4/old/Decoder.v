@@ -53,22 +53,14 @@ module Decoder (
     always @(*) begin
         if (ALUControl == 4'b1111) begin
             case (Funct3)
-                3'h0: MCycleOp = 2'b00;  // mul
-
-                3'h1: MCycleOp = 2'b00;  // mulh
-
-                // 3'h2: MCycleOp = 2'b01;  // mulhsu
-
-                3'h3: MCycleOp = 2'b01;  // mulhu
-
+                3'h0: MCycleOp = 2'b00;  // MUL
+                3'h1: MCycleOp = 2'b00;  // MULH
+                3'h2: MCycleOp = 2'b00;  // MULHSU
+                3'h3: MCycleOp = 2'b01;  // MULHU
                 3'h4: MCycleOp = 2'b10;  // div
-
                 3'h5: MCycleOp = 2'b11;  // divu
-
                 3'h6: MCycleOp = 2'b10;  // rem
-
                 3'h7: MCycleOp = 2'b11;  // remu 
-
                 default: MCycleOp = 2'b00;
             endcase
         end
