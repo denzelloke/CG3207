@@ -65,5 +65,5 @@ always @ (posedge CLK) begin
         FlushD <= 1'b1;
         FlushE <= 1'b1;
     end
-
 end
+endmodule
