@@ -37,11 +37,11 @@ module RV #(
 ) (
     input CLK,
     input RESET,
-    //input Interrupt,      // for optional future use.
+    input IRQ,                 // Interrupt request from Wrapper's InterruptController
     input [31:0] Instr,
     input [31:0] ReadData_in,  // Name mangled to support lb/lbu/lh/lhu
     output MemRead,
-    output [3:0] WriteMask,  // Column-wise write enable to support sb/sw. Each column is a byte.
+    output [3:0] WriteMask,    // Column-wise write enable to support sb/sw. Each column is a byte.
     output [31:0] PCF,
     output [31:0] ALUResult,
     output [31:0] WriteData_out  // Name mangled to support sb/sw
@@ -165,6 +165,14 @@ module RV #(
 
     // Interrupt Signals
     wire MRETExecute;
+    wire PipelineEmpty;
+    wire StopFetchAdmission;
+    wire InterruptTaken;
+    wire ReturnFromInterrupt;
+    wire [31:0] InterruptPC;
+    wire [31:0] ReturnPC;
+    wire IRQFlushD;     // Separate from the HazardUnit's existing flush outputs.
+    wire IRQFlushE;     // Separate from the HazardUnit's existing flush outputs.
 
     // -------------------------------------------------------------------------
     // Fetch stage and next-PC selection
@@ -406,6 +414,9 @@ module RV #(
     // Only recognise an executing, valid mret instruction.
     assign MRETExecute = MRETE && ValidE && !StallE && !RESET;
 
+    //means all admitted instructions have finished, and no mcycle ops left
+    assign PipelineEmpty = !ValidD && !ValidE && !ValidM && !ValidW && !Busy && !MCYCLESTALL;
+
     // -------------------------------------------------------------------------
     // Module Instatiations
     // -------------------------------------------------------------------------
@@ -599,5 +610,23 @@ module RV #(
         WE_PC,
         PC_IN,
         PCF
+    );
+
+    IRQHandler #(
+    .HANDLER_ADDRESS(32'h00400100) // TODO: Must match assembly handler address
+    ) IRQHandler1 (
+        CLK,
+        RESET,
+        IRQ,
+        PCF,                 // ResumePC
+        PipelineEmpty,
+        MRETExecute,
+        StopFetchAdmission,
+        InterruptTaken,
+        ReturnFromInterrupt,
+        InterruptPC,
+        ReturnPC,
+        IRQFlushD,           // FlushD
+        IRQFlushE            // FlushE
     );
 endmodule
