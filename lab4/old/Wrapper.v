@@ -486,6 +486,29 @@ module Wrapper #(
     end
 
     //----------------------------------------------------------------
+    // Interrupt controller connections
+    //----------------------------------------------------------------
+    wire LoadEnableMask;        // Save new interrupt-enable settings on this write.
+    wire [1:0] ACK;             // A 1 acknowledges the corresponding interrupt source.
+    wire [1:0] Pending;         // Sources with events waiting to be handled.
+    wire [1:0] EnableMask;      // Sources currently allowed to interrupt.
+    wire IRQ;                  // Interrupt request sent to RV.
+    wire ButtonEvent;          // Clean button-press pulse; connected later.
+
+    // Temporarily test timer interrupts only.
+    assign ButtonEvent = 1'b0;
+
+    // Save the enable mask when software writes a full word to IRQ_ENABLE.
+    assign LoadEnableMask =
+        !RESET && dec_IRQ_ENABLE && (&MemWrite_out);
+
+    // Pass acknowledgement bits only during a full-word write to IRQ_ACK.
+    assign ACK =
+        (!RESET && dec_IRQ_ACK && (&MemWrite_out))
+        ? WriteData_out[1:0]
+        : 2'b00;
+
+    //----------------------------------------------------------------
     // RV port map
     //----------------------------------------------------------------
     RV #(
@@ -493,6 +516,7 @@ module Wrapper #(
     ) RV1 (
         CLK,
         RESET,
+        IRQ,        //request from InterruptController
         Instr,
         ReadData_in,
         MemRead,
@@ -513,6 +537,22 @@ module Wrapper #(
         WriteData_out[0],
         TimerEvent,
         TicksCounter
+    );
+
+    //----------------------------------------------------------------
+    // Interrupt controller instance
+    //----------------------------------------------------------------
+    InterruptController InterruptController1 (
+        CLK,
+        RESET,
+        TimerEvent,
+        ButtonEvent,
+        LoadEnableMask,
+        WriteData_out[1:0],
+        ACK,
+        Pending,
+        EnableMask,
+        IRQ
     );
 
 endmodule
