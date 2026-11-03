@@ -54,7 +54,7 @@ module RV #(
     // Fetch stage
     wire [31:0] InstrF;
     wire        WE_PC;
-    wire [31:0] PC_IN;
+    reg [31:0] PC_IN;
 
     //Fetch stage: Branch prediction
     wire [31:0] PredictedNextPCF;
@@ -179,7 +179,10 @@ module RV #(
     // -------------------------------------------------------------------------
 
     assign InstrF = Instr;
-    assign WE_PC  = MispredictE || !StallF;
+
+    // Allow interrupt entry/return and misprediction redirects even while fetch is held.
+    // Otherwise, advance the PC only when fetch is neither stalled nor blocked for draining.
+    assign WE_PC  = ReturnFromInterrupt || InterruptTaken || MispredictE || (!StallF && !StopFetchAdmission); 
 
     always @(*) begin
         case (PCSrcE)
@@ -190,7 +193,20 @@ module RV #(
         endcase
     end
 
-    assign PC_IN = MispredictE ? ActualNextPCE : PredictedNextPCF; 
+    always @ (*) begin
+        if (ReturnFromInterrupt) begin      //resume the interrupted programme
+            PC_IN = ReturnPC;           
+        end
+        else if (InterruptTaken) begin      //enter the interrupt handler
+            PC_IN = InterruptPC;
+        end
+        else if (MispredictE) begin         //correct an older instruction's prediction
+            PC_IN = ActualNextPCE;
+        end
+        else begin                          //normal predicted fetch
+            PC_IN = PredictedNextPCF;
+        end
+    end
 
     BranchPredictor BranchPredictor1(
         CLK,
