@@ -4,12 +4,20 @@ module test_IRQHandler;
 
     localparam [31:0] HANDLER_ADDRESS = 32'h00400100;
 
+    localparam [1:0] NORMAL  = 2'b00;
+    localparam [1:0] DRAIN   = 2'b01;
+    localparam [1:0] HANDLER = 2'b10;
+
+    // Inputs
     reg CLK = 0;
     reg RESET = 0;
     reg IRQ = 0;
-    reg MRET = 0;
-    reg [31:0] PC = 0;
+    reg [31:0] ResumePC = 0;
+    reg PipelineEmpty = 0;
+    reg MRETExecute = 0;
 
+    // Outputs
+    wire StopFetchAdmission;
     wire InterruptTaken;
     wire ReturnFromInterrupt;
     wire [31:0] InterruptPC;
@@ -26,8 +34,10 @@ module test_IRQHandler;
         .CLK(CLK),
         .RESET(RESET),
         .IRQ(IRQ),
-        .MRET(MRET),
-        .PC(PC),
+        .ResumePC(ResumePC),
+        .PipelineEmpty(PipelineEmpty),
+        .MRETExecute(MRETExecute),
+        .StopFetchAdmission(StopFetchAdmission),
         .InterruptTaken(InterruptTaken),
         .ReturnFromInterrupt(ReturnFromInterrupt),
         .InterruptPC(InterruptPC),
@@ -36,117 +46,238 @@ module test_IRQHandler;
         .FlushE(FlushE)
     );
 
+    // Clock: 10 ns period
     always #5 CLK = ~CLK;
 
-    // Check outputs and the two internal state registers.
-    // Internal checks match your current names: InInterrupt and EPC.
+    // Apply inputs on a falling edge.
+    // Check combinational requests before the next rising edge.
+    // Then check the stored state and EPC after that rising edge.
     task step;
+        input [8*100-1:0] description;
+
         input reset_value;
         input irq_value;
+        input empty_value;
         input mret_value;
-        input [31:0] pc_value;
+        input [31:0] resume_value;
+
+        input expected_stop;
         input expected_entry;
         input expected_return;
-        input expected_active;
-        input [31:0] expected_epc;
-        input [31:0] expected_interrupt_pc;
-        input [31:0] expected_return_pc;
+        input expected_flush;
+
+        input [1:0] expected_state_after;
+        input [31:0] expected_epc_after;
+
+        integer errors_before;
+        reg [31:0] epc_before;
+
         begin
+            errors_before = errors;
+
             @(negedge CLK);
             RESET = reset_value;
             IRQ = irq_value;
-            MRET = mret_value;
-            PC = pc_value;
+            PipelineEmpty = empty_value;
+            MRETExecute = mret_value;
+            ResumePC = resume_value;
 
-            @(posedge CLK);
             #1;
-            checks = checks + 1;
+            epc_before = dut.EPC;
 
-            if ((InterruptTaken !== expected_entry) ||
+            // These signals must be correct BEFORE the accepting edge.
+            if ((StopFetchAdmission !== expected_stop) ||
+                (InterruptTaken !== expected_entry) ||
                 (ReturnFromInterrupt !== expected_return) ||
-                (FlushD !== (expected_entry | expected_return)) ||
-                (FlushE !== (expected_entry | expected_return)) ||
-                (dut.InInterrupt !== expected_active) ||
-                (dut.EPC !== expected_epc) ||
-                (InterruptPC !== expected_interrupt_pc) ||
-                (ReturnPC !== expected_return_pc)) begin
+                (FlushD !== expected_flush) ||
+                (FlushE !== expected_flush)) begin
 
                 errors = errors + 1;
-                $display("FAIL check %0d at %0t", checks, $time);
+
+                $display("FAIL before edge: %0s", description);
+                $display(" Stop=%b expected=%b",
+                         StopFetchAdmission, expected_stop);
                 $display(" Entry=%b expected=%b Return=%b expected=%b",
                          InterruptTaken, expected_entry,
                          ReturnFromInterrupt, expected_return);
-                $display(" FlushD=%b FlushE=%b Active=%b expected=%b",
-                         FlushD, FlushE, dut.InInterrupt, expected_active);
-                $display(" EPC=%h expected=%h",
-                         dut.EPC, expected_epc);
-                $display(" InterruptPC=%h expected=%h",
-                         InterruptPC, expected_interrupt_pc);
-                $display(" ReturnPC=%h expected=%h",
-                         ReturnPC, expected_return_pc);
+                $display(" FlushD=%b FlushE=%b expected=%b",
+                         FlushD, FlushE, expected_flush);
             end
+
+            // Addresses are continuously available.
+            if (InterruptPC !== HANDLER_ADDRESS) begin
+                errors = errors + 1;
+                $display("FAIL: InterruptPC=%h expected=%h",
+                         InterruptPC, HANDLER_ADDRESS);
+            end
+
+            if (ReturnPC !== epc_before) begin
+                errors = errors + 1;
+                $display("FAIL: ReturnPC does not match current EPC");
+            end
+
+            @(posedge CLK);
+            #1;
+
+            if ((dut.State !== expected_state_after) ||
+                (dut.EPC !== expected_epc_after) ||
+                (ReturnPC !== expected_epc_after)) begin
+
+                errors = errors + 1;
+
+                $display("FAIL after edge: %0s", description);
+                $display(" State=%b expected=%b",
+                         dut.State, expected_state_after);
+                $display(" EPC=%h expected=%h",
+                         dut.EPC, expected_epc_after);
+                $display(" ReturnPC=%h expected=%h",
+                         ReturnPC, expected_epc_after);
+            end
+
+            checks = checks + 1;
+
+            if (errors == errors_before)
+                $display("PASS: %0s", description);
         end
     endtask
 
     initial begin
-        $display("Starting IRQHandler tests");
-        $display("NOTE: These tests assume the current EPC = PC + 4 design.");
+        $display("Starting drain-state IRQHandler tests");
 
-        // Reset takes priority over IRQ and MRET.
-        step(1, 1, 1, 32'h00400020,
-             0, 0, 0, 0, 0, 0);
+        // Arguments after description:
+        // RESET, IRQ, PipelineEmpty, MRETExecute, ResumePC
+        // expected Stop, Entry, Return, Flush
+        // expected State after edge, EPC after edge
 
-        // MRET outside a handler is ignored by this simplified module.
-        step(0, 0, 1, 32'h00400020,
-             0, 0, 0, 0, 0, 0);
+        step("Reset overrides IRQ and MRET",
+             1, 1, 1, 1, 32'h00400020,
+             1, 0, 0, 0,
+             NORMAL, 32'h00000000);
 
-        // Enter handler: save 00400024.
-        step(0, 1, 0, 32'h00400020,
-             1, 0, 1, 32'h00400024, HANDLER_ADDRESS, 0);
+        step("Normal execution without IRQ",
+             0, 0, 0, 0, 32'h00400020,
+             0, 0, 0, 0,
+             NORMAL, 32'h00000000);
 
-        // IRQ remains high: no nested entry, no EPC overwrite.
-        step(0, 1, 0, 32'h00400110,
-             0, 0, 1, 32'h00400024, HANDLER_ADDRESS, 0);
+        step("MRET outside handler is ignored",
+             0, 0, 0, 1, 32'h00400020,
+             0, 0, 0, 0,
+             NORMAL, 32'h00000000);
 
-        // Keep executing handler with no request.
-        step(0, 0, 0, 32'h00400114,
-             0, 0, 1, 32'h00400024, HANDLER_ADDRESS, 0);
+        // IRQ selects DRAIN; entry does not happen on this edge.
+        step("IRQ starts draining",
+             0, 1, 0, 0, 32'h00400020,
+             0, 0, 0, 0,
+             DRAIN, 32'h00000000);
 
-        // Return to saved address.
-        step(0, 0, 1, 32'h00400118,
-             0, 1, 0, 32'h00400024, HANDLER_ADDRESS, 32'h00400024);
+        step("Occupied pipeline prevents interrupt entry",
+             0, 1, 0, 0, 32'h00400024,
+             1, 0, 0, 0,
+             DRAIN, 32'h00000000);
 
-        // Return/flush pulses clear on the following cycle.
-        step(0, 0, 0, 32'h00400024,
-             0, 0, 0, 32'h00400024, HANDLER_ADDRESS, 32'h00400024);
+        // Once draining starts, dropping IRQ does not cancel it.
+        step("Drain continues even if IRQ drops",
+             0, 0, 0, 0, 32'h00400024,
+             1, 0, 0, 0,
+             DRAIN, 32'h00000000);
 
-        // A later interrupt captures a new EPC.
-        step(0, 1, 0, 32'h00400040,
-             1, 0, 1, 32'h00400044, HANDLER_ADDRESS, 32'h00400024);
+        step("MRET is ignored during drain",
+             0, 0, 0, 1, 32'h00400024,
+             1, 0, 0, 0,
+             DRAIN, 32'h00000000);
 
-        // While in handler, MRET takes priority over IRQ.
-        step(0, 1, 1, 32'h00400118,
-             0, 1, 0, 32'h00400044, HANDLER_ADDRESS, 32'h00400044);
+        // Emulate RV correcting the continuation after a branch recovery.
+        step("Resume address can change while draining",
+             0, 0, 0, 0, 32'h00400080,
+             1, 0, 0, 0,
+             DRAIN, 32'h00000000);
 
-        // Unacknowledged IRQ causes entry again on the next cycle.
-        step(0, 1, 0, 32'h00400044,
-             1, 0, 1, 32'h00400048, HANDLER_ADDRESS, 32'h00400044);
+        // EPC must capture 00400080 directly, NOT 00400084.
+        step("Empty pipeline permits entry and captures ResumePC",
+             0, 0, 1, 0, 32'h00400080,
+             1, 1, 0, 0,
+             HANDLER, 32'h00400080);
 
-        // Reset while handling an interrupt.
-        step(1, 1, 1, 32'h00400118,
-             0, 0, 0, 0, 0, 0);
+        step("Handler permits instruction admission",
+             0, 0, 0, 0, 32'h00400110,
+             0, 0, 0, 0,
+             HANDLER, 32'h00400080);
 
-        step(0, 0, 0, 32'h00400000,
-             0, 0, 0, 0, 0, 0);
+        step("IRQ during handler does not cause nested entry",
+             0, 1, 1, 0, 32'h00400114,
+             0, 0, 0, 0,
+             HANDLER, 32'h00400080);
+
+        step("MRET redirects to EPC and flushes younger instructions",
+             0, 0, 0, 1, 32'h00400118,
+             1, 0, 1, 1,
+             NORMAL, 32'h00400080);
+
+        step("Return requests clear after returning",
+             0, 0, 0, 0, 32'h00400080,
+             0, 0, 0, 0,
+             NORMAL, 32'h00400080);
+
+        // Even if already empty, NORMAL first transitions into DRAIN.
+        step("New IRQ with empty pipeline still starts with DRAIN",
+             0, 1, 1, 0, 32'h004000A0,
+             0, 0, 0, 0,
+             DRAIN, 32'h00400080);
+
+        step("Second entry replaces the saved EPC",
+             0, 1, 1, 0, 32'h004000A4,
+             1, 1, 0, 0,
+             HANDLER, 32'h004000A4);
+
+        step("MRET is allowed while IRQ remains asserted",
+             0, 1, 0, 1, 32'h00400118,
+             1, 0, 1, 1,
+             NORMAL, 32'h004000A4);
+
+        step("Unacknowledged IRQ starts another drain",
+             0, 1, 0, 0, 32'h004000A4,
+             0, 0, 0, 0,
+             DRAIN, 32'h004000A4);
+
+        step("Reset during drain cancels entry",
+             1, 1, 1, 1, 32'h004000A4,
+             1, 0, 0, 0,
+             NORMAL, 32'h00000000);
+
+        step("Start another interrupt after reset",
+             0, 1, 0, 0, 32'h004000C0,
+             0, 0, 0, 0,
+             DRAIN, 32'h00000000);
+
+        step("Enter handler after reset",
+             0, 0, 1, 0, 32'h004000C0,
+             1, 1, 0, 0,
+             HANDLER, 32'h004000C0);
+
+        step("Reset during handler suppresses return and clears EPC",
+             1, 1, 1, 1, 32'h00400118,
+             1, 0, 0, 0,
+             NORMAL, 32'h00000000);
+
+        step("Normal operation resumes after reset",
+             0, 0, 0, 0, 32'h00400000,
+             0, 0, 0, 0,
+             NORMAL, 32'h00000000);
+
+        $display("----------------------------------------");
 
         if (errors == 0)
-            $display("IRQ HANDLER PASS: all %0d checks passed", checks);
+            $display("IRQ HANDLER PASS: all %0d scenarios passed",
+                     checks);
         else
-            $display("IRQ HANDLER FAIL: %0d errors", errors);
+            $display("IRQ HANDLER FAIL: %0d errors in %0d scenarios",
+                     errors, checks);
 
+        $display("----------------------------------------");
         $finish;
     end
 
+    // Prevent a broken test from running indefinitely.
     initial begin
         #10000;
         $display("FAIL: IRQHandler test timed out");

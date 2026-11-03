@@ -11,59 +11,95 @@ module IRQHandler #(
     input CLK,          //same as CPU
     input RESET,        //clears Interrupt State
     input IRQ,          //from InterruptController.v
-    input MRET,         //indicates that PC is returning from Interrupt Handler; TODO: add MRET decoding logic in Decoder.v
-    input [31:0] PC,    //current processor address, used when saving the return address
-
-    output reg InterruptTaken,          //tells CPU an interrupt is being entered
-    output reg ReturnFromInterrupt,     //tells the cput that the handler is now returning
-    output reg [31:0] InterruptPC,      //new PC for entering the handler
-    output reg [31:0] ReturnPC,         //saved PC to use when returning
+    input [31:0] ResumePC,    //next normal instruction to execute
+    input PipelineEmpty,    //all instructions admitted have already been finished
+    input MRETExecute,      //a valid MRET is being executed now
+    output reg StopFetchAdmission,      //tells CPU to not let another fetched instruction enter D stage
+    output reg InterruptTaken,          //tells CPU to redirect to the handler on rising clock edge
+    output reg ReturnFromInterrupt,     //tells the CPU to redirect to the EPC
+    output reg [31:0] InterruptPC,      //is the fixed Handler Address
+    output reg [31:0] ReturnPC,         //is the saved EPC
     output reg FlushD,                  //clear instructions in D stage
     output reg FlushE                  //clear instructions in E stage
 );
 
-reg [31:0] EPC;                 //Exception Programme Counter - stores where CPU should continue after the Interrupt Handler finishes
-reg InInterrupt;                //1 means CPU is currently inside an Interrupt Handler
+reg [31:0] EPC;                 //Exception Programme Counter - stores the address to resume after the handler
+reg [1:0] State;                //stores whether we are currently running normally, draining or in the handler
+                                //00 is normal, 01 is draining, 10 is in handler
+reg [1:0] NextState;            //calculate what state becomes at next edge
+
+//assume RV always accepts an asserted entry or return redirect at the next rising edge
+
+//combinational logic
+always @ (*) begin
+    //defaults
+    NextState = State;
+    StopFetchAdmission = 1'b0;
+    InterruptTaken = 1'b0;
+    ReturnFromInterrupt = 1'b0;
+    FlushD = 1'b0;
+    FlushE = 1'b0;
+    InterruptPC = HANDLER_ADDRESS;
+    ReturnPC = EPC;
+
+    if (RESET) begin
+        StopFetchAdmission = 1'b1;
+        NextState = 2'b00;
+    end
+
+    else begin
+        case (State)
+            2'b00: begin      //CPU is running normally
+                if (IRQ) begin          //enter drain if IRQ generated
+                    NextState = 2'b01;
+                end
+            end
+            2'b01: begin     //CPU is in drain; drain finishes main programme's existing instructions before entering interrupt routine
+                StopFetchAdmission = 1'b1;      //TODO: the following in RV.v
+                                                //TODO: stop fetching and stop F to D reg admission
+                                                //TODO: allow existing D/E/M/W instructions to advance when hazards permit
+                                                //TODO: insert invalid bubbles as stages empty
+                                                //TODO: Still allow older branch recovery to correct the fetch address; Let MCycle finish.
+
+                if (PipelineEmpty) begin        //enter Handler when finished instructions in pipeline
+                    InterruptTaken = 1'b1;
+                    NextState = 2'b10;
+                end
+            end
+            2'b10: begin          //CPU is in handler
+                if (MRETExecute) begin      //Return to original PC
+                    StopFetchAdmission = 1'b1;
+                    ReturnFromInterrupt = 1'b1;
+                    FlushD = 1'b1;          //clear younger instructions fetched after MRET since we need to return back to EPC
+                    FlushE = 1'b1;
+                    NextState = 2'b00;
+                end
+            end
+            default: begin      //handles State == 2'b11 jic
+                StopFetchAdmission = 1'b1;
+                NextState = 2'b00;
+            end
+        endcase
+    end
+end
+
 
 
 always @ (posedge CLK) begin
-
-    //clear one-cycle output signals
-    InterruptTaken <= 1'b0;
-    ReturnFromInterrupt <= 1'b0;
-    FlushD <= 1'b0;
-    FlushE <= 1'b0;
-
     if (RESET) begin
-        InterruptPC <= 32'b0;
-        ReturnPC <= 32'b0;
-        InterruptTaken <= 1'b0;
-        ReturnFromInterrupt <= 1'b0;
-        FlushD <= 1'b0;
-        FlushE <= 1'b0;
-    
-        InInterrupt <= 1'b0;
+        State <= 2'b00;
         EPC <= 32'b0;
     end
-    else if (MRET & InInterrupt) begin          //returning from Handler
-        InInterrupt <= 1'b0;
-        ReturnPC <= EPC;
-        ReturnFromInterrupt <= 1'b1;
-        FlushD <= 1'b1;
-        FlushE <= 1'b1;
-    end
-    else if (~InInterrupt & IRQ) begin          //entering into Handler
-        InterruptTaken <= 1'b1;
-
-        //TODO: Verify this EPC value against RV.v's pipeline timing.
-        //Check which pipeline stage accepts IRQ and what PC represents at that point.
-        //EPC must be the address of the next normal instruction to execute after MRET.
-        //Check the PC_F/PC_D/PC_E signals and the interrupt redirect/flush priority in RV.v.
-        EPC <= PC + 32'd4;        //address where normal execution should resume
-        InInterrupt <= 1'b1;
-        InterruptPC <= HANDLER_ADDRESS;
-        FlushD <= 1'b1;
-        FlushE <= 1'b1;
+    
+    else begin
+        State <= NextState;
+        if (InterruptTaken) begin
+            EPC <= ResumePC;
+        end
     end
 end
+
+
+
+
 endmodule
