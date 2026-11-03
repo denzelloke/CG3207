@@ -150,6 +150,15 @@ module Wrapper #(
     reg dec_IRQ_ACK;
 
     //----------------------------------------------------------------
+    // Timer and Interrupt signals
+    //---------------------------------------------------------------
+    reg [31:0] TimerPeriod;
+    wire [31:0] TicksCounter;    // Total ticks generated; later readable by software.
+
+    wire [1:0] EnableMask;      // Sources currently allowed to interrupt.
+    wire [1:0] Pending;         // Sources with events waiting to be handled.
+    
+    //----------------------------------------------------------------
     // Memory declaration
     //-----------------------------------------------------------------
     reg [31:0] IROM[0:2**(IROM_DEPTH_BITS-2)-1];  // instruction memory aka IROM
@@ -501,16 +510,14 @@ end
     //----------------------------------------------------------------
     // Timer configuration
     //----------------------------------------------------------------
-    reg [31:0] TimerPeriod;
+    
     wire TimerPeriodWrite;
     wire TimerConfigureWritePulse;
-    
     wire TimerEvent;             // A tick from Timer; later sent to InterruptController.
-    wire [31:0] TicksCounter;    // Total ticks generated; later readable by software.
 
     // Accept an aligned, full-word store to the selected register.
     assign TimerPeriodWrite =
-        !RESET && dec_TIMER_PERIOD && (&MemWrite_out);          //
+        !RESET && dec_TIMER_PERIOD && (&MemWrite_out);          
 
     assign TimerConfigureWritePulse =
         !RESET && dec_TIMER_CTRL && (&MemWrite_out);
@@ -528,8 +535,6 @@ end
     //----------------------------------------------------------------
     wire LoadEnableMask;        // Save new interrupt-enable settings on this write.
     wire [1:0] ACK;             // A 1 acknowledges the corresponding interrupt source.
-    wire [1:0] Pending;         // Sources with events waiting to be handled.
-    wire [1:0] EnableMask;      // Sources currently allowed to interrupt.
     wire IRQ;                  // Interrupt request sent to RV.
     wire ButtonEvent;          // Clean button-press pulse; connected later.
 
