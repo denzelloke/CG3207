@@ -460,6 +460,30 @@ module Wrapper #(
     //----------------------------------------------------------------
     assign LED_PC = PC[15-N_LEDs_OUT+1 : 2];  // debug showing PC
 
+    //----------------------------------------------------------------
+    // Timer configuration
+    //----------------------------------------------------------------
+    reg [31:0] TimerPeriod;
+    wire TimerPeriodWrite;
+    wire TimerConfigureWritePulse;
+    
+    wire TimerEvent;             // A tick from Timer; later sent to InterruptController.
+    wire [31:0] TicksCounter;    // Total ticks generated; later readable by software.
+
+    // Accept an aligned, full-word store to the selected register.
+    assign TimerPeriodWrite =
+        !RESET && dec_TIMER_PERIOD && (&MemWrite_out);          //
+
+    assign TimerConfigureWritePulse =
+        !RESET && dec_TIMER_CTRL && (&MemWrite_out);
+
+    // Remember the period written by software.
+    always @(posedge CLK) begin
+        if (RESET)
+            TimerPeriod <= 32'b0;
+        else if (TimerPeriodWrite)
+            TimerPeriod <= WriteData_out;
+    end
 
     //----------------------------------------------------------------
     // RV port map
@@ -476,6 +500,19 @@ module Wrapper #(
         PC,
         ALUResult,
         WriteData_out
+    );
+
+    //----------------------------------------------------------------
+    // Timer instance
+    //----------------------------------------------------------------
+    Timer Timer1 (
+        CLK,
+        RESET,
+        TimerConfigureWritePulse,
+        TimerPeriod,
+        WriteData_out[0],
+        TimerEvent,
+        TicksCounter
     );
 
 endmodule
