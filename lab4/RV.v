@@ -77,6 +77,7 @@ module RV #(
     wire [2:0]  SizeSelD;
     wire [1:0]  MCycleOpD;
     wire        UsesRs1D, UsesRs2D;
+    wire        MRETD;
 
     // Decode stage: register operands and W-to-D forwarding
     wire [31:0] RD1D, RD2D;
@@ -101,6 +102,7 @@ module RV #(
     reg  [4:0]  rs1E, rs2E;
     reg  [1:0]  MCycleOpE;
     wire MulHSU;
+    reg MRETE;
 
     // Execute stage: forwarding, ALU, and branch datapath
     reg  [31:0] SrcA_tmp, SrcB_tmp;
@@ -160,6 +162,9 @@ module RV #(
     wire        Forward1D, Forward2D;
     wire [1:0]  ForwardAE, ForwardBE;
     wire        ForwardM;
+
+    // Interrupt Signals
+    wire MRETExecute;
 
     // -------------------------------------------------------------------------
     // Fetch stage and next-PC selection
@@ -320,12 +325,14 @@ module RV #(
             rs2E      <= 5'd0;
             MCycleOpE <= 2'b00;
             ValidE <= 1'b0;
+            MRETE <= 1'b0;
         end
         else if (!StallE) begin
             rs1E      <= rs1D;
             rs2E      <= rs2D;
             MCycleOpE <= MCycleOpD;
             ValidE <= ValidD;
+            MRETE <= MRETD;
         end
 
         if (RESET || FlushM) begin
@@ -391,6 +398,17 @@ module RV #(
 
     // Register-file writes are independent of the PC write enable.
     assign WE = RegWriteW && !RESET;
+
+    // -------------------------------------------------------------------------
+    // Interrupt control
+    // -------------------------------------------------------------------------
+
+    // Only recognise an executing, valid mret instruction.
+    assign MRETExecute = MRETE && ValidE && !StallE && !RESET;
+
+    // -------------------------------------------------------------------------
+    // Module Instatiations
+    // -------------------------------------------------------------------------
 
     DRegister DRegister1 (
         CLK,
@@ -553,7 +571,8 @@ module RV #(
         ImmSrc,
         ALUControlD,
         MCycleOpD,
-        SizeSelD
+        SizeSelD,
+        MRETD
     );
 
     PC_Logic PC_Logic1 (
