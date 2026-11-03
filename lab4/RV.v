@@ -166,7 +166,7 @@ module RV #(
     // Interrupt Signals
     wire MRETExecute;
     wire PipelineEmpty;
-    wire StopFetchAdmission;
+    wire StopFetchAdmission;        //1 means we are trying to drain the pipeline
     wire InterruptTaken;
     wire ReturnFromInterrupt;
     wire [31:0] InterruptPC;
@@ -298,7 +298,7 @@ module RV #(
     end
 
     always @(posedge CLK) begin
-        if (RESET || FlushE)
+        if (ClearE)                 //Clear E is assigned below before auxiliary pipeline register
             MCycleStarted <= 1'b0;
         else if (Start)
             MCycleStarted <= 1'b1;
@@ -321,14 +321,18 @@ module RV #(
     // Auxiliary pipeline registers for hazard and multi-cycle control
     // -------------------------------------------------------------------------
 
+    assign ClearD = RESET || FlushD || IRQFlushD || (StopFetchAdmission && !StallD);    //Last condition means: Stop accepting new instructions, but clear D only when its current instruction is allowed to leave
+    assign ClearE = RESET || FlushE || IRQFlushE;
+    assign ClearM = RESET || FlushM;
+
     always @(posedge CLK) begin
-        if (RESET || FlushD) begin
+        if (ClearD) begin
             ValidD <= 1'b0;
-        end else if (!StallD) begin //TODO: adjust admission logic so draining inserts invalid bubbles instead of marking every unstalled cycle valid.
+        end else if (!StallD) begin 
             ValidD <= 1'b1;
         end
 
-        if (RESET || FlushE) begin
+        if (ClearE) begin
             rs1E      <= 5'd0;
             rs2E      <= 5'd0;
             MCycleOpE <= 2'b00;
@@ -359,10 +363,6 @@ module RV #(
             ValidW <= ValidM;
         end
     end
-
-    assign ClearD = RESET || FlushD;
-    assign ClearE = RESET || FlushE;
-    assign ClearM = RESET || FlushM;
 
     // -------------------------------------------------------------------------
     // Memory stage: external interface and W-to-M store-data forwarding
