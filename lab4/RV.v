@@ -141,6 +141,7 @@ module RV #(
     reg  [4:0]  rs2M;
     wire [31:0] WriteData;
     wire [2:0]  SizeSelM;  
+    reg ValidM;
 
     // Write-back stage and register-file write port
     wire        RegWriteW, MemtoRegW;
@@ -150,6 +151,7 @@ module RV #(
     wire [4:0]  rdW;
     wire        WE;
     wire [31:0] WD;
+    reg ValidW;
 
     // Hazard control
     wire        StallF, StallD, StallE;
@@ -309,7 +311,7 @@ module RV #(
     always @(posedge CLK) begin
         if (RESET || FlushD) begin
             ValidD <= 1'b0;
-        end else if (!StallD) begin
+        end else if (!StallD) begin //TODO: adjust admission logic so draining inserts invalid bubbles instead of marking every unstalled cycle valid.
             ValidD <= 1'b1;
         end
 
@@ -326,10 +328,21 @@ module RV #(
             ValidE <= ValidD;
         end
 
-        if (FlushM)
+        if (RESET || FlushM) begin
             rs2M <= 5'd0;
-        else
+            ValidM <= 1'b0;
+        end
+        else begin
             rs2M <= rs2E;
+            ValidM <= ValidE;
+        end
+
+        if (RESET) begin
+            ValidW <= 1'b0;
+        end
+        else begin
+            ValidW <= ValidM;
+        end
     end
 
     assign ClearD = RESET || FlushD;
