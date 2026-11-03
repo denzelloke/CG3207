@@ -72,6 +72,14 @@ module Wrapper #(
     localparam MMIO_BASE = 32'hFFFF_0000;
     localparam PC_INIT = IROM_BASE;  // PC initialization value - same as IROM_BASE
 
+    // Timer and interrupt registers:
+    localparam [31:0] TIMER_PERIOD_ADDR = 32'hFFFF0100;     //stores no. of CPU cycles per tick at this addr
+    localparam [31:0] TIMER_CTRL_ADDR   = 32'hFFFF0104;     //write bit 0 to enable/disable the timer and apply settings
+    localparam [31:0] TIMER_TICKS_ADDR  = 32'hFFFF0108;     //read how many ticks the timer has generated thus far
+    localparam [31:0] IRQ_ENABLE_ADDR   = 32'hFFFF010C;     //write which sources may interrupt: bit 0 is timer, bit 1 is button
+    localparam [31:0] IRQ_PENDING_ADDR  = 32'hFFFF0110;     //read which sources have events waiting to be handled
+    localparam [31:0] IRQ_ACK_ADDR      = 32'hFFFF0114;     //write 1 to acknowledge that source: bit 0 is timer, bit 1 is button
+
     localparam IROM_DEPTH_BITS = 13;  //9 for 128 words. Change if your program is larger.
     localparam DMEM_DEPTH_BITS = 9;		//9 for 128 words. Change if your data (const+variable) is larger, and in C/Assembly to set STACK_INIT appropriately.
     localparam MMIO_DEPTH_BITS = 8;
@@ -133,6 +141,14 @@ module Wrapper #(
         dec_CYCLECOUNT  // Cycle count signal
         ;
 
+    // Each signal is 1 when ALUResult matches that register's address.
+    reg dec_TIMER_PERIOD;
+    reg dec_TIMER_CTRL;
+    reg dec_TIMER_TICKS;
+    reg dec_IRQ_ENABLE;
+    reg dec_IRQ_PENDING;
+    reg dec_IRQ_ACK;
+
     //----------------------------------------------------------------
     // Memory declaration
     //-----------------------------------------------------------------
@@ -186,8 +202,16 @@ module Wrapper #(
         dec_SEVENSEG      <= 1'b0;
         dec_CYCLECOUNT    <= 1'b0;
 
-        if (ALUResult[31:DMEM_DEPTH_BITS] == DMEM_BASE[31:DMEM_DEPTH_BITS]) dec_DMEM <= 1'b1;
-        else if (ALUResult[31:MMIO_DEPTH_BITS] == MMIO_BASE[31:MMIO_DEPTH_BITS]) begin
+        //defaults for timer and interrupts
+        dec_TIMER_PERIOD <= 1'b0;
+        dec_TIMER_CTRL   <= 1'b0;
+        dec_TIMER_TICKS  <= 1'b0;
+        dec_IRQ_ENABLE  <= 1'b0;
+        dec_IRQ_PENDING <= 1'b0;
+        dec_IRQ_ACK     <= 1'b0;
+
+        if (ALUResult[31:DMEM_DEPTH_BITS] == DMEM_BASE[31:DMEM_DEPTH_BITS]) dec_DMEM <= 1'b1;           //selects RAM
+        else if (ALUResult[31:MMIO_DEPTH_BITS] == MMIO_BASE[31:MMIO_DEPTH_BITS]) begin                  //selects an existing peripheral
             case (ALUResult[MMIO_DEPTH_BITS-1:2])
                 UART_RX_VALID_OFF[MMIO_DEPTH_BITS-1:2]: dec_UART_RX_VALID <= 1'b1;
                 UART_RX_OFF[MMIO_DEPTH_BITS-1:2]: dec_UART_RX <= 1'b1;
@@ -207,7 +231,19 @@ module Wrapper #(
                 default: bad_MEM_addr <= 1'b1;
             endcase
         end
-        else bad_MEM_addr <= 1'b1;
+        else begin                                                                                      //selects a timer/interrupt register
+            //check the new timer and interrupt register addresses.
+            case (ALUResult)
+                TIMER_PERIOD_ADDR: dec_TIMER_PERIOD <= 1'b1;
+                TIMER_CTRL_ADDR:   dec_TIMER_CTRL   <= 1'b1;
+                TIMER_TICKS_ADDR:  dec_TIMER_TICKS  <= 1'b1;
+                IRQ_ENABLE_ADDR:  dec_IRQ_ENABLE   <= 1'b1;
+                IRQ_PENDING_ADDR: dec_IRQ_PENDING  <= 1'b1;
+                IRQ_ACK_ADDR:     dec_IRQ_ACK      <= 1'b1;
+
+                default: bad_MEM_addr <= 1'b1;                                  
+            endcase
+        end
     end
 
     assign dec_MMIO_read = MemRead || dec_DIP || dec_PB || dec_UART_RX_VALID || dec_UART_RX || dec_UART_TX_READY || dec_UART_TX || dec_CYCLECOUNT || dec_ACCEL_DATA || dec_ACCEL_DREADY ;
@@ -423,6 +459,7 @@ module Wrapper #(
     // Debug LEDs
     //----------------------------------------------------------------
     assign LED_PC = PC[15-N_LEDs_OUT+1 : 2];  // debug showing PC
+
 
     //----------------------------------------------------------------
     // RV port map
