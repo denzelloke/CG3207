@@ -58,7 +58,7 @@ module RV #(
 
     //Fetch stage: Branch prediction
     wire [31:0] PredictedNextPCF;
-    wire predictedTakenF;
+    wire        predictedTakenF;
 
     // Decode stage: instruction fields and control
     wire [31:0] InstrD;
@@ -85,8 +85,8 @@ module RV #(
 
     // Decode Stage: Branch Prediction
     wire [31:0] PredictedNextPCD;
-    wire isJumpD, isBranchD;
-    reg ValidD;
+    wire        isJumpD, isBranchD;
+    reg         ValidD;
 
     // Execute stage: pipelined control and operands
     wire [31:0] PCE;
@@ -101,8 +101,8 @@ module RV #(
     wire [4:0]  rdE;
     reg  [4:0]  rs1E, rs2E;
     reg  [1:0]  MCycleOpE;
-    wire MulHSU;
-    reg MRETE;
+    wire        MulHSU;
+    reg         MRETE;
 
     // Execute stage: forwarding, ALU, and branch datapath
     reg  [31:0] SrcA_tmp, SrcB_tmp;
@@ -143,7 +143,9 @@ module RV #(
     reg  [4:0]  rs2M;
     wire [31:0] WriteData;
     wire [2:0]  SizeSelM;  
-    reg ValidM;
+    reg         ValidM;
+    wire        MemReadEnableM;
+    wire        MemWriteEnableM;
 
     // Write-back stage and register-file write port
     wire        RegWriteW, MemtoRegW;
@@ -153,7 +155,7 @@ module RV #(
     wire [4:0]  rdW;
     wire        WE;
     wire [31:0] WD;
-    reg ValidW;
+    reg         ValidW;
 
     // Hazard control
     wire        StallF, StallD, StallE;
@@ -297,7 +299,7 @@ module RV #(
 
     assign Operand1  = SrcA_tmp;
     assign Operand2  = SrcB_tmp;
-    assign IsMCycleE = (ALUControlE == 4'b1111);
+    assign IsMCycleE = ValidE && (ALUControlE == 4'b1111);      //bubble must not start a mul/div op or stall the cpu
     assign MulHSU = (IsMCycleE && (func3E == 3'b010));
 
     // Issue Start only once for the instruction held in Execute.
@@ -384,12 +386,15 @@ module RV #(
     // Memory stage: external interface and W-to-M store-data forwarding
     // -------------------------------------------------------------------------
 
+    // Only valid M-stage instructions may access memory or peripherals
+    assign MemReadEnableM = MemtoRegM && ValidM && !RESET;
+    assign MemWriteEnableM = MemWriteM && ValidM && !RESET;
+
     // MemRead is required for devices such as the UART console.
-    assign MemRead   = MemtoRegM;
+    assign MemRead   = MemReadEnableM;
     assign ALUResult = ALUResultM;
     assign WriteData = ForwardM ? ResultW : WriteDataM;
 
-    // Current implementation supports word accesses only.
     // For lb/lbu/lh/lhu/sb/sh, derive SizeSel from the decoder (funct3), carry
     // it through the pipeline, and update load extension, store-data alignment,
     // and byte-write enables. See Lab 4 Enhancement: additional instructions.
@@ -402,8 +407,8 @@ module RV #(
     // todo: change WriteMask so that only the appropriate bytes are write enabled
 
     Subword Subword1 (
-        MemtoRegM,       // 1 for load
-        MemWriteM,       // 1 for store
+        MemReadEnableM,       // 1 for load
+        MemWriteEnableM,       // 1 for store
         SizeSelM,  
         ALUResultM[1:0], // stores readwrite address
         ReadData_in,     // full word read from data mem block
@@ -421,7 +426,8 @@ module RV #(
     assign WD      = ResultW;
 
     // Register-file writes are independent of the PC write enable.
-    assign WE = RegWriteW && !RESET;
+    // Only a valid W-stage instruction may write to the register file.
+    assign WE = RegWriteW && !RESET && ValidW;
 
     // -------------------------------------------------------------------------
     // Interrupt control
