@@ -309,17 +309,51 @@ module Wrapper #(
     //----------------------------------------------------------------
     // MMIO read
     //----------------------------------------------------------------
-    always @(*) begin  // @posedge CLK only if using synch read for memory
-        if (dec_DIP) ReadData_MMIO <= {{31 - N_DIPs + 1{1'b0}}, DIP};
-        else if (dec_PB) ReadData_MMIO <= {{31 - N_PBs + 1{1'b0}}, PB};
-        else if (dec_UART_RX && UART_RX_valid) ReadData_MMIO <= {24'd0, UART_RX};
-        else if (dec_UART_RX_VALID) ReadData_MMIO <= {31'd0, UART_RX_valid};
-        else if (dec_UART_TX_READY) ReadData_MMIO <= {31'd0, UART_TX_ready};
-        else if (dec_CYCLECOUNT) ReadData_MMIO <= cycle_count;
-        else if (dec_ACCEL_DATA) ReadData_MMIO <= ACCEL_Data;
-        else  // dec_ACCEL_DREADY // the default else to avoid the statement from being incomplete
-            ReadData_MMIO <= {31'd0, ACCEL_DReady};
-    end
+    always @(*) begin
+    if (dec_DIP)
+        ReadData_MMIO = {{32-N_DIPs{1'b0}}, DIP};
+
+    else if (dec_PB)
+        ReadData_MMIO = {{32-N_PBs{1'b0}}, PB};
+
+    else if (dec_UART_RX && UART_RX_valid)
+        ReadData_MMIO = {24'd0, UART_RX};
+
+    else if (dec_UART_RX_VALID)
+        ReadData_MMIO = {31'd0, UART_RX_valid};
+
+    else if (dec_UART_TX_READY)
+        ReadData_MMIO = {31'd0, UART_TX_ready};
+
+    else if (dec_CYCLECOUNT)
+        ReadData_MMIO = cycle_count;
+
+    else if (dec_ACCEL_DATA)
+        ReadData_MMIO = ACCEL_Data;
+
+    else if (dec_ACCEL_DREADY)
+        ReadData_MMIO = {31'd0, ACCEL_DReady};
+
+    // Read the period saved in Wrapper.
+    else if (dec_TIMER_PERIOD)
+        ReadData_MMIO = TimerPeriod;
+
+    // Read the total number of timer ticks.
+    else if (dec_TIMER_TICKS)
+        ReadData_MMIO = TicksCounter;
+
+    // Read which interrupt sources are enabled.
+    else if (dec_IRQ_ENABLE)
+        ReadData_MMIO = {30'd0, EnableMask};
+
+    // Read which interrupt sources need attention.
+    else if (dec_IRQ_PENDING)
+        ReadData_MMIO = {30'd0, Pending};
+
+    // Unhandled reads, including write-only CTRL and ACK, return zero.
+    else
+        ReadData_MMIO = 32'd0;
+end
 
     //----------------------------------------------------------------
     // Delaying the decoded signals for multiplexing (delay only if using synch read for memory)
@@ -334,16 +368,20 @@ module Wrapper #(
     //----------------------------------------------------------------
     integer j;
     always @(posedge CLK) begin
-        if (MemWrite) begin
-            for (j = 0; j < NUM_COL; j = j + 1) begin
-                if (MemWrite_out[j]) begin
-                    if (RESET) SEVENSEGHEX <= 32'd0;
-                    else if (dec_SEVENSEG)
-                        SEVENSEGHEX[j*COL_WIDTH +: COL_WIDTH] <= WriteData_out[j*COL_WIDTH +: COL_WIDTH];
-                end
+    // Reset must work even when no store is occurring.
+    if (RESET) begin
+        SEVENSEGHEX <= 32'd0;
+    end
+    else if (MemWrite && dec_SEVENSEG) begin
+        // Update only the bytes selected by the store.
+        for (j = 0; j < NUM_COL; j = j + 1) begin
+            if (MemWrite_out[j]) begin
+                SEVENSEGHEX[j*COL_WIDTH +: COL_WIDTH]
+                    <= WriteData_out[j*COL_WIDTH +: COL_WIDTH];
             end
         end
     end
+end
 
     //----------------------------------------------------------------
     // Memory-mapped LED write
