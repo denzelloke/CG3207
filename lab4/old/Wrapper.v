@@ -61,7 +61,7 @@ module Wrapper #(
     output reg [23:0] OLED_Data,		// 24-bit pixel so as to see easily on the display. <5R, 6G, 8B>, each extended to 8 bits left aligned.
     input [31:0] ACCEL_Data,		// Packed <Temp, X, Y, Z> from MSB to LSB. X, Y, Z are in +/-2g range, 8-bit signed.
     input ACCEL_DReady,			// Accelerometer data ready signal. Mostly not necessary unless you are reading at a very high rate.
-    input RESET,  // Active high. Implemented in TOP as not(BTND) or Internal_reset.
+    input RESET,  // Active high; TOP supplies BTND or internal reset.
     input CLK  // Divided Clock from TOP, shown on LED[8].
 );
 
@@ -315,6 +315,29 @@ module Wrapper #(
         else cycle_count <= cycle_count + 1;
     end
 
+    // Synchronise physical buttons to the CPU clock.
+    // First stage is used only by the second stage.
+    (* ASYNC_REG = "TRUE" *) reg [N_PBs-1:0] PB_meta;
+    (* ASYNC_REG = "TRUE" *) reg [N_PBs-1:0] PB_sync;
+
+    // Previous centre-button state, used to detect a new press.
+    reg PreviousCentreButton;
+
+    // Sample buttons and remember the previous centre-button state.
+    // This synchronises the inputs; it does not remove mechanical bounce.
+    always @(posedge CLK) begin
+        if (RESET) begin
+            PB_meta <= {N_PBs{1'b0}};
+            PB_sync <= {N_PBs{1'b0}};
+            PreviousCentreButton <= 1'b0;
+        end
+        else begin
+            PB_meta <= PB;
+            PB_sync <= PB_meta;
+            PreviousCentreButton <= PB_sync[1];
+        end
+    end
+
     //----------------------------------------------------------------
     // MMIO read
     //----------------------------------------------------------------
@@ -323,7 +346,8 @@ module Wrapper #(
         ReadData_MMIO = {{32-N_DIPs{1'b0}}, DIP};
 
     else if (dec_PB)
-        ReadData_MMIO = {{32-N_PBs{1'b0}}, PB};
+        // Software reads synchronised button levels.
+        ReadData_MMIO = {{(32-N_PBs){1'b0}}, PB_sync};
 
     else if (dec_UART_RX && UART_RX_valid)
         ReadData_MMIO = {24'd0, UART_RX};
@@ -536,10 +560,11 @@ end
     wire LoadEnableMask;        // Save new interrupt-enable settings on this write.
     wire [1:0] ACK;             // A 1 acknowledges the corresponding interrupt source.
     wire IRQ;                  // Interrupt request sent to RV.
-    wire ButtonEvent;          // Clean button-press pulse; connected later.
+    wire ButtonEvent;          // One-cycle centre-button rising-edge pulse; not debounced.
 
-    // Temporarily test timer interrupts only.
-    assign ButtonEvent = 1'b0;
+    // Generate an event when the synchronised centre button changes from 0 to 1.
+    assign ButtonEvent =
+        !RESET && PB_sync[1] && !PreviousCentreButton;
 
     // Save the enable mask when software writes a full word to IRQ_ENABLE.
     assign LoadEnableMask =
