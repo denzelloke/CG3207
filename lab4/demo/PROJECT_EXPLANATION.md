@@ -447,6 +447,128 @@ VGA refresh is fixed and gameplay is timer-paced. The appropriate claim is **les
 | Does IRQ mode eliminate busy waiting? | No. This implementation still waits in a software loop. |
 | Does 42.6% fewer cycles mean 42.6% more FPS? | No. It measures CPU work in update/checksum windows; VGA refresh remains fixed. |
 
+## 12. Baseline versus enhanced: hardware, area, power and timing
+
+### 12.1 Two different meanings of “without enhancements”
+
+Our current switches compare **execution modes in the same implemented hardware**. They do not compare a smaller baseline processor against a larger enhanced processor.
+
+| Comparison | What changes? | What can it establish? |
+|---|---|---|
+| Switch modes in the current bitstream | Whether predictions are used, whether interrupts are enabled, and which assembly access path executes | Workload cycles, instructions, conditional misses and behaviour |
+| Separate baseline and enhanced RTL builds | Enhancement hardware is physically omitted or included before synthesis | FPGA resource overhead, timing closure and estimated power differences |
+
+The current “baseline” in our performance table means prediction bypassed and software subword fallback. The predictor, subword unit and interrupt hardware are still present. In particular, the bypassed predictor can still train. A genuinely stripped baseline would need equivalent correct sequential branch handling, word memory accesses and polling support.
+
+### 12.2 Hardware and area trade-offs
+
+| Enhancement | Hardware added or extended | What software/execution gains | Area interpretation |
+|---|---|---|---|
+| Branch prediction | 32-entry target/tag/history table, lookup/update logic, prediction metadata and recovery integration | Less wrong-path work and fewer recovery cycles | Requires storage and logic; switching it off does not reclaim FPGA resources |
+| Subword support | Byte/halfword selection, sign/zero extension, store positioning, byte-enable generation and access-size control | Avoids long software extraction and read-modify-write sequences | Adds dedicated load/store logic; both modes retain the same packed RAM layout |
+| Interrupt support | Pending/mask registers, request logic, CPU drain/entry/return controller, saved resume PC and associated controls | Safe peripheral event servicing and return | Adds state and control logic; timer/input hardware also supports the polling demo and should not all be charged to interrupts |
+
+The predictor's declared per-entry state is a valid bit, 25-bit tag, 32-bit target, jump bit and two-bit counter: 62 bits per entry, or **1,984 bits of declared table state** across 32 entries. This is a logical storage count, not a claim of 1,984 physical flip-flops or a measured LUT/BRAM cost. Synthesis determines the implementation.
+
+The subword enhancement does not reduce the enemy/bullet arrays below 64 bytes when enabled. Both access modes use those same records. It also does not remove the ordinary ALU/shifter needed for other instructions.
+
+There is no quantified baseline-versus-enhanced area result in the measurements used by this guide. To obtain one, build both versions for the same FPGA with the same clock constraint and tool settings, keeping the demo and performance instrumentation equivalent. Compare LUTs, flip-flops, distributed RAM, BRAM and DSP usage, and identify which differences belong to the CPU rather than the renderer or other shared peripherals.
+
+**Claim to use:** We trade additional processor logic and state for more efficient execution and better event-handling capability. The current switch experiment measures execution benefits, not resource savings or exact area overhead.
+
+### 12.3 CPI: how efficiently cycles are used
+
+For the measured windows:
+
+```text
+CPI = measured cycles / retired instructions
+
+Execution time = cycles / clock frequency
+               = instruction count × CPI / clock frequency
+```
+
+Use accumulated cycles divided by accumulated retired instructions. Do not average per-update CPI values or divide rounded HUD averages when exact totals are available.
+
+Applying these formulas to the documented 120-update simulation results:
+
+| Mode | Cycles | Retired instructions | Window CPI | Aggregate measured time at 25 MHz |
+|---|---:|---:|---:|---:|
+| Prediction off, fallback subwords | 139,974 | 106,186 | 1.3182 | 5.599 ms |
+| Prediction on, fallback subwords | 123,924 | 106,186 | 1.1670 | 4.957 ms |
+| Prediction off, direct subwords | 96,672 | 68,399 | 1.4134 | 3.867 ms |
+| Prediction on, direct subwords | 80,410 | 68,399 | 1.1756 | 3.216 ms |
+
+These times are conversions of recorded cycle counts at the design's nominal 25 MHz clock. They are **the sum of the measured update/checksum windows**, not wall-clock replay durations or physical timing measurements. A 120-update run paced at approximately 60 updates per second lasts roughly two seconds, mostly outside these measured windows.
+
+Branch prediction improves CPI while leaving the useful instruction count unchanged in these results. The baseline-to-prediction-only CPI reduction is the same 11.5% as its cycle reduction.
+
+**Subwords illustrate why CPI alone is insufficient.** With prediction off, direct subwords increase CPI from 1.3182 to 1.4134, yet reduce total cycles by 30.9%. The program executes far fewer instructions. Removing many simple shift/mask instructions changes the instruction mix, and remaining stalls and overhead are spread over fewer retired instructions. The aggregate results do not identify every cause of that CPI change, but they clearly establish lower total work.
+
+Likewise, the combined mode has slightly higher CPI than prediction-only mode, but completes the measured work in fewer cycles because it executes many fewer instructions.
+
+**Claim to use:** Prediction primarily improves cycles per instruction. Subwords primarily reduce the instruction count required for each game update. Overall performance depends on both, so we compare total cycles as well as CPI.
+
+These CPI values inherit the pipeline-boundary qualifications in Section 8. They describe the monitored windows rather than a separately drained, exact function-level instruction trace.
+
+### 12.4 Execution time versus hardware timing
+
+“Timing” can mean two different things:
+
+| Meaning | Relevant measurement | What our evidence shows |
+|---|---|---|
+| Time spent executing the workload | Cycle count at a given clock frequency | Fewer measured cycles with prediction and direct subwords |
+| How fast the circuit can safely be clocked | Critical paths and post-route setup/hold reports | Not established by the game counters |
+
+The current board design targets a shared **25 MHz clock**, corresponding to a **40 ns period**. Enhancement modes do not change that clock.
+
+Additional predictor lookup or subword-selection logic can affect combinational paths. Whether it changes the limiting path or achievable frequency requires implementation reports; fewer workload cycles do not prove a higher maximum clock frequency.
+
+The 42.6% cycle reduction means the combined mode uses about 57.4% of the baseline's measured execution time at equal frequency, or about **1.74× measured-workload speedup**. It does not mean the FPGA clock or VGA refresh increased by 1.74×.
+
+For a defensible physical comparison, check post-route timing for both builds at the same clock constraint. A stored bitstream alone does not establish baseline-versus-enhanced timing overhead.
+
+### 12.5 Power and energy
+
+Power is the rate of energy use, measured in watts. Energy is the total used over an interval, measured in joules:
+
+```text
+Energy = average power × elapsed time
+```
+
+Fewer measured cycles do not automatically mean lower power or lower energy for the complete game.
+
+| Enhancement | Possible energy benefit | Counteracting cost / limit in this project |
+|---|---|---|
+| Prediction | Avoids some wrong-path activity and recovery work | Predictor storage and lookup/update logic also consume energy; bypass mode still allows training |
+| Subwords | Fewer executed instructions and fewer software read-modify-write operations for small stores | Dedicated access logic has a cost; byte accesses do not imply that the whole memory read path stops toggling |
+| Interrupts | In a design with an idle/sleep mechanism, events could wake a CPU instead of continuous polling | This implementation has no demonstrated WFI/clock-gating idle mechanism and continues software waiting; handlers also cost instructions |
+
+The game remains timer-paced and the VGA hardware continues running. Finishing an update sooner may simply leave more cycles executing the waiting loop. Therefore, a 42.6% reduction in measured update cycles is **not** a 42.6% board-power or whole-replay energy saving.
+
+We have no quantified power comparison in the evidence used here. To establish one:
+
+1. Use equivalent game input, difficulty, replay length and clock frequency.
+2. Define whether the measurement covers update windows or the complete replay, including waiting and display operation.
+3. For estimates, use implementation power analysis with representative switching activity and report its assumptions.
+4. For physical results, measure a consistent board supply/rail and report the measurement boundary and uncertainty.
+5. Distinguish switch-mode activity changes in one bitstream from the area and power changes of separately built hardware.
+
+**Claim to use:** The enhancements reduce measured CPU work, but this project has not established a numerical power or energy saving. That requires a separate power measurement or activity-based estimate.
+
+### 12.6 Summary for the group
+
+| Dimension | Without using enhancements | With enhancements used | Evidence level |
+|---|---|---|---|
+| Game functionality | Same intended gameplay using fallback access and polling | Same intended gameplay with direct access, prediction and optional IRQ servicing | Replay/checksum and functional tests documented |
+| Instruction count | More instructions for packed-field access | Fewer with direct subwords | Recorded simulation counters |
+| CPI | More recovery cost when prediction is bypassed | Prediction lowers CPI for a fixed subword mode; subwords can raise CPI while still lowering total cycles | Computed from recorded counters |
+| Update/checksum execution time | 139,974 cycles for the documented baseline run | 80,410 cycles with prediction and direct subwords | 42.6% fewer measured cycles; same clock assumed |
+| Interrupt behaviour | Foreground polling | Safe event servicing, drain and return | Functional/latency evidence; no demonstrated update-window speedup |
+| Physical area using switches | All hardware remains present | All hardware remains present | Same implemented bitstream |
+| Area of truly stripped versus enhanced builds | Expected to omit enhancement logic/state | Includes that logic/state | Requires separate synthesis/implementation for quantified overhead |
+| Maximum clock frequency | Not inferred from workload counters | Not inferred from workload counters | Requires timing reports |
+| Power / whole-run energy | Not quantified | Not quantified | Requires power analysis or measurement |
+
 ## Source references
 
 - [Game assembly](software/game.asm)
