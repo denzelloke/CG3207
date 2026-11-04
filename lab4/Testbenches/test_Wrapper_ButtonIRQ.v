@@ -1,267 +1,369 @@
 `timescale 1ns / 1ps
-// AI-assisted educational integration test for Giggs's CG3207 Lab 4 Wrapper.
-// Uses the actual CPU and peripherals. No forced IRQ, bus, pending bits or PC.
-// Only IROM/DMEM are initialized hierarchically, while RESET is asserted.
-// Use as SIMULATION SOURCE ONLY. See README before running.
+
+// Simulation source only.
+// Uses the existing button_irq_test assembly and its IROM/DMEM files.
+// Drives physical button inputs; does not force IRQ or CPU signals.
+
 module test_Wrapper_ButtonIRQ;
+
     reg CLK = 0;
     reg RESET = 1;
     reg [15:0] DIP = 0;
     reg [2:0] PB = 0;
+
     wire [7:0] LED_OUT;
     wire [6:0] LED_PC;
     wire [31:0] SEVENSEGHEX;
     wire [7:0] UART_TX;
-    wire UART_TX_valid, UART_RX_ack, OLED_Write, ACCEL_DReady_unused;
+    wire UART_TX_valid;
+    wire UART_RX_ack;
+    wire OLED_Write;
     wire [6:0] OLED_Col;
     wire [5:0] OLED_Row;
     wire [23:0] OLED_Data;
 
+    // Must match the ButtonDebouncer instance inside Wrapper.
+    localparam integer DEBOUNCE_CYCLES = 62500;
+
+    // Allows time for synchronisation, interrupt servicing and LED updates.
+    localparam integer SOFTWARE_WAIT = 1000;
+
     Wrapper dut (
-        .DIP(DIP), .PB(PB), .LED_OUT(LED_OUT), .LED_PC(LED_PC),
-        .SEVENSEGHEX(SEVENSEGHEX), .UART_TX(UART_TX),
-        .UART_TX_ready(1'b1), .UART_TX_valid(UART_TX_valid),
-        .UART_RX(8'd0), .UART_RX_valid(1'b0), .UART_RX_ack(UART_RX_ack),
-        .OLED_Write(OLED_Write), .OLED_Col(OLED_Col), .OLED_Row(OLED_Row),
-        .OLED_Data(OLED_Data), .ACCEL_Data(32'd0), .ACCEL_DReady(1'b0),
-        .RESET(RESET), .CLK(CLK)
+        .DIP(DIP),
+        .PB(PB),
+        .LED_OUT(LED_OUT),
+        .LED_PC(LED_PC),
+        .SEVENSEGHEX(SEVENSEGHEX),
+        .UART_TX(UART_TX),
+        .UART_TX_ready(1'b1),
+        .UART_TX_valid(UART_TX_valid),
+        .UART_RX(8'd0),
+        .UART_RX_valid(1'b0),
+        .UART_RX_ack(UART_RX_ack),
+        .OLED_Write(OLED_Write),
+        .OLED_Col(OLED_Col),
+        .OLED_Row(OLED_Row),
+        .OLED_Data(OLED_Data),
+        .ACCEL_Data(32'd0),
+        .ACCEL_DReady(1'b0),
+        .RESET(RESET),
+        .CLK(CLK)
     );
+
+    // CPU clock: 6.25 MHz, period = 160 ns.
     always #80 CLK = ~CLK;
 
+    integer checks = 0;
+    integer events = 0;
+    integer entries = 0;
+    integer returns = 0;
 
-    integer checks=0, i, n;
+    // Reference model for the synchroniser and debouncer.
+    reg [2:0] model_meta = 0;
+    reg [2:0] model_sync = 0;
+    reg model_down = 0;
+    reg model_event = 0;
+    integer model_count = 0;
+
+    reg taken;
+    reg returning;
+    reg [31:0] saved_pc = 0;
+
     task check;
-        input [31:0] actual, expected;
-        input [8*100-1:0] msg;
+        input [31:0] actual;
+        input [31:0] expected;
+        input [8*100-1:0] message;
         begin
-            checks=checks+1;
-            if(actual !== expected) begin
-                $display("FAIL %0s actual=%h expected=%h PC=%h",msg,actual,expected,dut.PC);
-                $fatal(1,"Button IRQ test failed");
+            checks = checks + 1;
+
+            if (actual !== expected) begin
+                $display(
+                    "FAIL: %0s actual=%h expected=%h PC=%h time=%0t",
+                    message, actual, expected, dut.PC, $time
+                );
+                $fatal(1, "Button debounce/IRQ test failed");
             end
         end
     endtask
-    task settle;
-        begin repeat(600) @(negedge CLK); end
+
+    // Change inputs on falling edges, away from CPU sampling edges.
+    task drive_buttons;
+        input [2:0] value;
+        input integer cycles;
+        begin
+            @(negedge CLK);
+            PB = value;
+            repeat (cycles) @(negedge CLK);
+        end
     endtask
-    task count_is;
+
+    // Wait for software to finish servicing an event.
+    task check_count;
         input [31:0] expected;
         begin
-            settle;
-            check(SEVENSEGHEX,expected,"display count");
-            check(dut.DMEM[0],expected,"ISR count in RAM");
-            check(dut.Pending,0,"handler acknowledged event");
-            check(dut.IRQ,0,"IRQ cleared");
-            check(dut.ButtonEvent,0,"event not sustained");
+            repeat (SOFTWARE_WAIT) @(negedge CLK);
+
+            check(SEVENSEGHEX, expected, "seven-segment count");
+            check(dut.DMEM[0], expected, "button count in RAM");
+            check(dut.Pending, 0, "pending bits acknowledged");
+            check(dut.IRQ, 0, "IRQ cleared");
+            check(dut.ButtonEvent, 0, "event pulse has ended");
+
+            // Each accepted press should cause exactly one complete ISR.
+            check(events, expected, "accepted button events");
+            check(entries, expected, "interrupt entries");
+            check(returns, expected, "interrupt returns");
         end
     endtask
+
     task boot;
+        integer timeout;
         begin
-            @(negedge CLK); RESET=1; PB=0;
-            repeat(5) @(negedge CLK);
-            RESET=0;
-            n=0;
-            while(dut.EnableMask !== 2'b10 && n<2000) begin
-                @(negedge CLK);n=n+1;
+            @(negedge CLK);
+            RESET = 1;
+            PB = 0;
+
+            repeat (5) @(negedge CLK);
+            RESET = 0;
+
+            // Wait for assembly to enable only the button interrupt.
+            timeout = 0;
+            while ((dut.EnableMask !== 2'b10) &&
+                   (timeout < 3000)) begin
+                @(negedge CLK);
+                timeout = timeout + 1;
             end
-            check(dut.EnableMask,2,"button interrupt enabled by software");
-            count_is(0);
+
+            check(dut.EnableMask, 2, "software enables button interrupt");
+            check_count(0);
+            check(LED_OUT, 0, "buttons released after reset");
         end
     endtask
-    // Model the sampled button path independently from physical input stimulus.
-    reg [2:0] m1=0,m2=0;
-    reg previous=0, expected_event;
-    integer events=0, entries=0, returns=0;
-    reg [31:0] saved_pc;
-    reg taken, returning;
+
+    // Check the sampled hardware behaviour every clock.
     always @(posedge CLK) begin
-        taken=dut.RV1.InterruptTaken; returning=dut.RV1.ReturnFromInterrupt;
-        if(RESET) begin
-            m1=0;m2=0;previous=0;events=0;entries=0;returns=0;
-        end else begin
-            if(dut.ButtonEvent) events=events+1;
-            if(taken) begin
-                check(dut.RV1.PipelineEmpty,1,"entry after drain");
-                saved_pc=dut.PC; entries=entries+1;
-            end
-            if(returning) begin
-                check(dut.RV1.ReturnPC,saved_pc,"return to saved PC");
-                returns=returns+1;
-            end
-            previous=m2[1];m2=m1;m1=PB;
+        // These are the requests that RV accepts at this clock edge.
+        taken = dut.RV1.InterruptTaken;
+        returning = dut.RV1.ReturnFromInterrupt;
+
+        if (RESET) begin
+            model_meta = 0;
+            model_sync = 0;
+            model_down = 0;
+            model_event = 0;
+            model_count = 0;
+
+            events = 0;
+            entries = 0;
+            returns = 0;
+            saved_pc = 0;
         end
-        expected_event=!RESET && m2[1] && !previous;
+        else begin
+            // IC samples the event value from BEFORE this edge.
+            if (dut.ButtonEvent)
+                events = events + 1;
+
+            if (taken) begin
+                check(dut.RV1.PipelineEmpty, 1,
+                      "interrupt entry waits for an empty pipeline");
+
+                saved_pc = dut.PC;
+                entries = entries + 1;
+            end
+
+            if (returning) begin
+                check(dut.RV1.ReturnPC, saved_pc,
+                      "MRET uses the saved resume address");
+
+                returns = returns + 1;
+            end
+
+            // Debouncer sees the OLD synchroniser output at this edge.
+            model_event = 0;
+
+            if (model_sync[1] == model_down) begin
+                model_count = 0;
+            end
+            else begin
+                model_count = model_count + 1;
+
+                if (model_count == DEBOUNCE_CYCLES) begin
+                    model_down = model_sync[1];
+                    model_event = model_sync[1];
+                    model_count = 0;
+                end
+            end
+
+            // Update the two synchroniser stages after using their old values.
+            model_sync = model_meta;
+            model_meta = PB;
+        end
+
+        // Wait for non-blocking assignments and combinational logic to settle.
         #1;
-        check(dut.PB_sync,m2,"synchronised button levels");
-        check(dut.ButtonEvent,expected_event,"one-cycle rising-edge event");
-        if(!RESET && taken) check(dut.PC,32'h00400100,"handler address");
-        if(!RESET && returning) check(dut.PC,saved_pc,"resume address");
+
+        check(dut.PB_sync, model_sync,
+              "two-stage button synchroniser");
+        check(dut.CentreButtonDown, model_down,
+              "debounced centre-button level");
+        check(dut.ButtonEvent, model_event,
+              "event only after a qualified press");
+
+        if (!RESET && taken)
+            check(dut.PC, 32'h00400100, "redirect to interrupt handler");
+
+        if (!RESET && returning)
+            check(dut.PC, saved_pc, "return to interrupted program");
     end
+
     initial begin
+        $display("Starting Wrapper button debounce and IRQ tests");
+
+        // Check key instructions from the existing button-test program.
+        // The testbench does not overwrite either memory.
         #2;
-        check(dut.IROM[0],32'h2000006f,"correct button test ROM");
-        check(dut.IROM[1],32'h00000013,"correct button test ROM");
-        check(dut.IROM[2],32'h00000013,"correct button test ROM");
-        check(dut.IROM[3],32'h00000013,"correct button test ROM");
-        check(dut.IROM[4],32'h00000013,"correct button test ROM");
-        check(dut.IROM[5],32'h00000013,"correct button test ROM");
-        check(dut.IROM[6],32'h00000013,"correct button test ROM");
-        check(dut.IROM[7],32'h00000013,"correct button test ROM");
-        check(dut.IROM[8],32'h00000013,"correct button test ROM");
-        check(dut.IROM[9],32'h00000013,"correct button test ROM");
-        check(dut.IROM[10],32'h00000013,"correct button test ROM");
-        check(dut.IROM[11],32'h00000013,"correct button test ROM");
-        check(dut.IROM[12],32'h00000013,"correct button test ROM");
-        check(dut.IROM[13],32'h00000013,"correct button test ROM");
-        check(dut.IROM[14],32'h00000013,"correct button test ROM");
-        check(dut.IROM[15],32'h00000013,"correct button test ROM");
-        check(dut.IROM[16],32'h00000013,"correct button test ROM");
-        check(dut.IROM[17],32'h00000013,"correct button test ROM");
-        check(dut.IROM[18],32'h00000013,"correct button test ROM");
-        check(dut.IROM[19],32'h00000013,"correct button test ROM");
-        check(dut.IROM[20],32'h00000013,"correct button test ROM");
-        check(dut.IROM[21],32'h00000013,"correct button test ROM");
-        check(dut.IROM[22],32'h00000013,"correct button test ROM");
-        check(dut.IROM[23],32'h00000013,"correct button test ROM");
-        check(dut.IROM[24],32'h00000013,"correct button test ROM");
-        check(dut.IROM[25],32'h00000013,"correct button test ROM");
-        check(dut.IROM[26],32'h00000013,"correct button test ROM");
-        check(dut.IROM[27],32'h00000013,"correct button test ROM");
-        check(dut.IROM[28],32'h00000013,"correct button test ROM");
-        check(dut.IROM[29],32'h00000013,"correct button test ROM");
-        check(dut.IROM[30],32'h00000013,"correct button test ROM");
-        check(dut.IROM[31],32'h00000013,"correct button test ROM");
-        check(dut.IROM[32],32'h00000013,"correct button test ROM");
-        check(dut.IROM[33],32'h00000013,"correct button test ROM");
-        check(dut.IROM[34],32'h00000013,"correct button test ROM");
-        check(dut.IROM[35],32'h00000013,"correct button test ROM");
-        check(dut.IROM[36],32'h00000013,"correct button test ROM");
-        check(dut.IROM[37],32'h00000013,"correct button test ROM");
-        check(dut.IROM[38],32'h00000013,"correct button test ROM");
-        check(dut.IROM[39],32'h00000013,"correct button test ROM");
-        check(dut.IROM[40],32'h00000013,"correct button test ROM");
-        check(dut.IROM[41],32'h00000013,"correct button test ROM");
-        check(dut.IROM[42],32'h00000013,"correct button test ROM");
-        check(dut.IROM[43],32'h00000013,"correct button test ROM");
-        check(dut.IROM[44],32'h00000013,"correct button test ROM");
-        check(dut.IROM[45],32'h00000013,"correct button test ROM");
-        check(dut.IROM[46],32'h00000013,"correct button test ROM");
-        check(dut.IROM[47],32'h00000013,"correct button test ROM");
-        check(dut.IROM[48],32'h00000013,"correct button test ROM");
-        check(dut.IROM[49],32'h00000013,"correct button test ROM");
-        check(dut.IROM[50],32'h00000013,"correct button test ROM");
-        check(dut.IROM[51],32'h00000013,"correct button test ROM");
-        check(dut.IROM[52],32'h00000013,"correct button test ROM");
-        check(dut.IROM[53],32'h00000013,"correct button test ROM");
-        check(dut.IROM[54],32'h00000013,"correct button test ROM");
-        check(dut.IROM[55],32'h00000013,"correct button test ROM");
-        check(dut.IROM[56],32'h00000013,"correct button test ROM");
-        check(dut.IROM[57],32'h00000013,"correct button test ROM");
-        check(dut.IROM[58],32'h00000013,"correct button test ROM");
-        check(dut.IROM[59],32'h00000013,"correct button test ROM");
-        check(dut.IROM[60],32'h00000013,"correct button test ROM");
-        check(dut.IROM[61],32'h00000013,"correct button test ROM");
-        check(dut.IROM[62],32'h00000013,"correct button test ROM");
-        check(dut.IROM[63],32'h00000013,"correct button test ROM");
-        check(dut.IROM[64],32'hff010113,"correct button test ROM");
-        check(dut.IROM[65],32'h01412023,"correct button test ROM");
-        check(dut.IROM[66],32'h01512223,"correct button test ROM");
-        check(dut.IROM[67],32'h110faa03,"correct button test ROM");
-        check(dut.IROM[68],32'h002a7a13,"correct button test ROM");
-        check(dut.IROM[69],32'h000a0e63,"correct button test ROM");
-        check(dut.IROM[70],32'h000f2a83,"correct button test ROM");
-        check(dut.IROM[71],32'h001a8a93,"correct button test ROM");
-        check(dut.IROM[72],32'h015f2023,"correct button test ROM");
-        check(dut.IROM[73],32'h095fa023,"correct button test ROM");
-        check(dut.IROM[74],32'h00200a13,"correct button test ROM");
-        check(dut.IROM[75],32'h114faa23,"correct button test ROM");
-        check(dut.IROM[76],32'h00012a03,"correct button test ROM");
-        check(dut.IROM[77],32'h00412a83,"correct button test ROM");
-        check(dut.IROM[78],32'h01010113,"correct button test ROM");
-        check(dut.IROM[79],32'h30200073,"correct button test ROM");
-        check(dut.IROM[80],32'h00000013,"correct button test ROM");
-        check(dut.IROM[81],32'h00000013,"correct button test ROM");
-        check(dut.IROM[82],32'h00000013,"correct button test ROM");
-        check(dut.IROM[83],32'h00000013,"correct button test ROM");
-        check(dut.IROM[84],32'h00000013,"correct button test ROM");
-        check(dut.IROM[85],32'h00000013,"correct button test ROM");
-        check(dut.IROM[86],32'h00000013,"correct button test ROM");
-        check(dut.IROM[87],32'h00000013,"correct button test ROM");
-        check(dut.IROM[88],32'h00000013,"correct button test ROM");
-        check(dut.IROM[89],32'h00000013,"correct button test ROM");
-        check(dut.IROM[90],32'h00000013,"correct button test ROM");
-        check(dut.IROM[91],32'h00000013,"correct button test ROM");
-        check(dut.IROM[92],32'h00000013,"correct button test ROM");
-        check(dut.IROM[93],32'h00000013,"correct button test ROM");
-        check(dut.IROM[94],32'h00000013,"correct button test ROM");
-        check(dut.IROM[95],32'h00000013,"correct button test ROM");
-        check(dut.IROM[96],32'h00000013,"correct button test ROM");
-        check(dut.IROM[97],32'h00000013,"correct button test ROM");
-        check(dut.IROM[98],32'h00000013,"correct button test ROM");
-        check(dut.IROM[99],32'h00000013,"correct button test ROM");
-        check(dut.IROM[100],32'h00000013,"correct button test ROM");
-        check(dut.IROM[101],32'h00000013,"correct button test ROM");
-        check(dut.IROM[102],32'h00000013,"correct button test ROM");
-        check(dut.IROM[103],32'h00000013,"correct button test ROM");
-        check(dut.IROM[104],32'h00000013,"correct button test ROM");
-        check(dut.IROM[105],32'h00000013,"correct button test ROM");
-        check(dut.IROM[106],32'h00000013,"correct button test ROM");
-        check(dut.IROM[107],32'h00000013,"correct button test ROM");
-        check(dut.IROM[108],32'h00000013,"correct button test ROM");
-        check(dut.IROM[109],32'h00000013,"correct button test ROM");
-        check(dut.IROM[110],32'h00000013,"correct button test ROM");
-        check(dut.IROM[111],32'h00000013,"correct button test ROM");
-        check(dut.IROM[112],32'h00000013,"correct button test ROM");
-        check(dut.IROM[113],32'h00000013,"correct button test ROM");
-        check(dut.IROM[114],32'h00000013,"correct button test ROM");
-        check(dut.IROM[115],32'h00000013,"correct button test ROM");
-        check(dut.IROM[116],32'h00000013,"correct button test ROM");
-        check(dut.IROM[117],32'h00000013,"correct button test ROM");
-        check(dut.IROM[118],32'h00000013,"correct button test ROM");
-        check(dut.IROM[119],32'h00000013,"correct button test ROM");
-        check(dut.IROM[120],32'h00000013,"correct button test ROM");
-        check(dut.IROM[121],32'h00000013,"correct button test ROM");
-        check(dut.IROM[122],32'h00000013,"correct button test ROM");
-        check(dut.IROM[123],32'h00000013,"correct button test ROM");
-        check(dut.IROM[124],32'h00000013,"correct button test ROM");
-        check(dut.IROM[125],32'h00000013,"correct button test ROM");
-        check(dut.IROM[126],32'h00000013,"correct button test ROM");
-        check(dut.IROM[127],32'h00000013,"correct button test ROM");
-        check(dut.IROM[128],32'hffff0fb7,"correct button test ROM");
-        check(dut.IROM[129],32'h10010f37,"correct button test ROM");
-        check(dut.IROM[130],32'h200f0113,"correct button test ROM");
-        check(dut.IROM[131],32'h100fa223,"correct button test ROM");
-        check(dut.IROM[132],32'h100fa623,"correct button test ROM");
-        check(dut.IROM[133],32'h000f2023,"correct button test ROM");
-        check(dut.IROM[134],32'h080fa023,"correct button test ROM");
-        check(dut.IROM[135],32'h00300a13,"correct button test ROM");
-        check(dut.IROM[136],32'h114faa23,"correct button test ROM");
-        check(dut.IROM[137],32'h00200a13,"correct button test ROM");
-        check(dut.IROM[138],32'h114fa623,"correct button test ROM");
-        check(dut.IROM[139],32'h068fa283,"correct button test ROM");
-        check(dut.IROM[140],32'h065fa023,"correct button test ROM");
-        check(dut.IROM[141],32'hff9ff06f,"correct button test ROM");
+        check(dut.IROM[0], 32'h2000006f, "button-test startup jump");
+        check(dut.IROM[64], 32'hff010113, "button-test handler");
+        check(dut.IROM[79], 32'h30200073, "handler MRET");
+        check(dut.IROM[128], 32'hffff0fb7, "button-test main");
+        check(dut.IROM[139], 32'h068fa283, "button-read loop");
+        check(dut.IROM[141], 32'hff9ff06f, "button-loop jump");
+
         boot;
-        // Stimulus changes on falling edges, safely away from sampling edges.
-        PB=3'b100;settle;check(LED_OUT,4,"left button MMIO readback");count_is(0);
-        PB=3'b001;settle;check(LED_OUT,1,"right button MMIO readback");count_is(0);
-        PB=0;settle;
-        PB=3'b010;count_is(1);check(LED_OUT,2,"centre button level");
-        count_is(1); // Still held: must not retrigger after ACK.
-        PB=0;count_is(1);check(LED_OUT,0,"released buttons");
-        PB=3'b010;count_is(2);
-        PB=0;count_is(2);
-        PB=3'b111;count_is(3);check(LED_OUT,7,"all buttons readback");
-        PB=0;count_is(3);
-        check(events,3,"three clean rising edges");
-        check(entries,3,"three ISR entries");check(returns,3,"three MRET returns");
-        boot; // Software and hardware restart without reloading RAM.
-        PB=3'b010;count_is(1);
-        PB=0;count_is(1);
-        check(events,1,"one event after reset");
-        check(entries,1,"one entry after reset");check(returns,1,"one return after reset");
-        $display("BUTTON IRQ PASS: %0d checks; clean presses, hold, release, MMIO and reset",checks);
+
+        // ------------------------------------------------------------
+        // 1. Left/right remain readable and do not generate button IRQs.
+        // ------------------------------------------------------------
+        drive_buttons(3'b100, SOFTWARE_WAIT);
+        check(LED_OUT, 4, "left button readback");
+        check_count(0);
+
+        drive_buttons(3'b001, SOFTWARE_WAIT);
+        check(LED_OUT, 1, "right button readback");
+        check_count(0);
+
+        drive_buttons(3'b000, SOFTWARE_WAIT);
+        check(LED_OUT, 0, "left/right released");
+
+        $display("PASS: left/right readback without centre IRQ");
+
+        // ------------------------------------------------------------
+        // 2. A short centre-button glitch must be ignored.
+        // ------------------------------------------------------------
+        drive_buttons(3'b010, DEBOUNCE_CYCLES / 4);
+
+        check(dut.CentreButtonDown, 0, "short press not accepted");
+        check(LED_OUT, 0, "short press not shown on LED1");
+
+        drive_buttons(3'b000, SOFTWARE_WAIT);
+        check_count(0);
+
+        $display("PASS: short centre-button glitch rejected");
+
+        // ------------------------------------------------------------
+        // 3. Press bounce, followed by one stable press.
+        // Each bouncing high period is shorter than the threshold.
+        // ------------------------------------------------------------
+        drive_buttons(3'b010, 100);
+        drive_buttons(3'b000, 80);
+        drive_buttons(3'b010, 400);
+        drive_buttons(3'b000, 200);
+        drive_buttons(3'b010, 1000);
+        drive_buttons(3'b000, SOFTWARE_WAIT);
+        check_count(0);
+
+        drive_buttons(3'b010, DEBOUNCE_CYCLES + 4);
+        check(dut.CentreButtonDown, 1, "stable press accepted");
+        check_count(1);
+        check(LED_OUT, 2, "debounced centre button readback");
+
+        $display("PASS: bouncing press produces exactly one interrupt");
+
+        // ------------------------------------------------------------
+        // 4. Holding the button must not generate another event.
+        // ------------------------------------------------------------
+        drive_buttons(3'b010, DEBOUNCE_CYCLES + 4);
+        check_count(1);
+
+        $display("PASS: held button does not retrigger");
+
+        // ------------------------------------------------------------
+        // 5. Release bounce must not re-arm the button prematurely.
+        // ------------------------------------------------------------
+        drive_buttons(3'b000, 100);
+        drive_buttons(3'b010, 80);
+        drive_buttons(3'b000, 400);
+        drive_buttons(3'b010, SOFTWARE_WAIT);
+
+        check(dut.CentreButtonDown, 1,
+              "short release bounce keeps button pressed");
+        check_count(1);
+        check(LED_OUT, 2, "release bounce keeps LED1 on");
+
+        // A fully qualified release re-arms the next press.
+        drive_buttons(3'b000, DEBOUNCE_CYCLES + 4);
+        check(dut.CentreButtonDown, 0, "stable release accepted");
+        check_count(1);
+        check(LED_OUT, 0, "released centre button readback");
+
+        $display("PASS: release bounce rejected; release generates no IRQ");
+
+        // ------------------------------------------------------------
+        // 6. Another real press must now be accepted.
+        // ------------------------------------------------------------
+        drive_buttons(3'b010, DEBOUNCE_CYCLES + 4);
+        check_count(2);
+
+        drive_buttons(3'b000, DEBOUNCE_CYCLES + 4);
+        check_count(2);
+
+        $display("PASS: second press accepted after stable release");
+
+        // ------------------------------------------------------------
+        // 7. All buttons together: only centre generates an IRQ.
+        // ------------------------------------------------------------
+        drive_buttons(3'b111, DEBOUNCE_CYCLES + 4);
+        check_count(3);
+        check(LED_OUT, 7, "all three buttons readback");
+
+        drive_buttons(3'b000, DEBOUNCE_CYCLES + 4);
+        check_count(3);
+        check(LED_OUT, 0, "all buttons released");
+
+        $display("PASS: simultaneous buttons produce one centre IRQ");
+
+        // ------------------------------------------------------------
+        // 8. Reset during an unfinished press clears debounce progress.
+        // ------------------------------------------------------------
+        drive_buttons(3'b010, DEBOUNCE_CYCLES / 2);
+        check(dut.CentreButtonDown, 0, "partial press still unqualified");
+
+        boot;
+
+        // This half-length press must not inherit progress from before reset.
+        drive_buttons(3'b010, DEBOUNCE_CYCLES / 2);
+        drive_buttons(3'b000, SOFTWARE_WAIT);
+        check_count(0);
+
+        // A full new press must work after reset.
+        drive_buttons(3'b010, DEBOUNCE_CYCLES + 4);
+        check_count(1);
+
+        drive_buttons(3'b000, DEBOUNCE_CYCLES + 4);
+        check_count(1);
+
+        $display("PASS: reset clears debounce progress and software count");
+
+        $display("----------------------------------------------");
+        $display("BUTTON DEBOUNCE / IRQ PASS: %0d checks", checks);
+        $display("----------------------------------------------");
         $finish;
     end
-    initial begin #10000000; $fatal(1,"Global timeout"); end
+
+    // 500 ms simulation timeout; longer than all intended test scenarios.
+    initial begin
+        #500000000;
+        $fatal(1, "Global timeout: button debounce/IRQ test did not finish");
+    end
+
 endmodule
