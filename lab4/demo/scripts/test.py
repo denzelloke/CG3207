@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Compile and run actual RTL tests with Icarus; fail on missing PASS or any FAIL."""
-import argparse, concurrent.futures, hashlib, json, os, re, subprocess
+import argparse, concurrent.futures, hashlib, json, os, re, shutil, subprocess
 from pathlib import Path
 from assemble import assemble
 from sources import DEMO, LAB, CORE, SOC
@@ -22,7 +22,15 @@ def main():
     p.add_argument('--jobs',type=int,default=2)
     p.add_argument('--updates',type=int,default=120)
     p.add_argument('--modes',default='8,9,10,11,12,13,14,15',help='Replay mode switch values; bit3 must be set')
-    a=p.parse_args();build=Path(a.out).resolve();assemble(build)
+    a=p.parse_args()
+    missing=[tool for tool in (a.iverilog,a.vvp,'java') if shutil.which(tool) is None]
+    if missing:
+        p.exit(2,'Missing required executable(s): '+', '.join(missing)+'\n'
+               'On Ubuntu/Debian, install Icarus Verilog with: sudo apt install iverilog\n'
+               'Java is also required for assembly. For a local Icarus installation, use\n'
+               '--iverilog /path/to/iverilog --vvp /path/to/vvp '
+               '[--ivl-base /path/to/lib/ivl].\n')
+    build=Path(a.out).resolve();assemble(build)
     provenance={'firmware':json.loads((build/'firmware.json').read_text()),
                 'suite':a.suite,'replay_updates':a.updates,
                 'rtl_sha256':{str(f.relative_to(LAB)):hashlib.sha256(f.read_bytes()).hexdigest()

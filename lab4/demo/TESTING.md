@@ -24,6 +24,8 @@ The following preview is generated from the RTL renderer with fixed display reco
 
 Run commands below from the **repository root** (`CG3207/labs`). You need Python 3, Java, the included `rars1_6.jar`, and Vivado for the FPGA build. The simulation tests use Icarus Verilog (`iverilog` and `vvp`).
 
+On Ubuntu/Debian, install the simulator with `sudo apt install iverilog`. This supplies both `iverilog` and `vvp`. A missing `iverilog` executable means simulation has not started; it is not an RTL test failure. The runner checks dependencies before assembling or running tests. For an existing local installation, see the explicit executable-path options in section 6.
+
 ```sh
 python3 lab4/demo/scripts/assemble.py
 python3 lab4/demo/scripts/test.py
