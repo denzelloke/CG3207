@@ -10,7 +10,7 @@ create_clock -add -name sys_clk_pin -period 10.00 -waveform {0 5} [get_ports {CL
 # CPU clock: 100 MHz divided by 2^20 (CLK_DIV_BITS = 19)
 create_generated_clock -name cpu_clk \
     -source [get_ports CLK_undiv] \
-    -divide_by 1048576 \
+    -divide_by 16 \
     [get_pins {CLK_DIVIDER_ON_SET.CLK_reg/Q}]
 
 
