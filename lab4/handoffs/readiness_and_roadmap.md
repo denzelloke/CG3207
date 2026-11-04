@@ -1,5 +1,11 @@
 # Lab 4 readiness assessment and completion roadmap
 
+> **Implementation update:** The roadmap has been implemented in `lab4/demo/`.
+> See [the current game build/test guide](../demo/TESTING.md) for the new top,
+> firmware, simulation evidence and board acceptance steps. This document
+> retains the earlier assessment; synthesis/timing/physical board validation
+> remains outstanding because Vivado here could not find a valid license.
+
 Assessment date: 2026-11-04, Asia/Singapore. Scope: the current Lab 4 sources, all three original handoffs (and their identical person-folder copies), the supplied architecture diagram, tests, memory images, and local Vivado project/artifacts. This is an analysis and implementation plan; no game or RTL changes were made during this review.
 
 ## Decision

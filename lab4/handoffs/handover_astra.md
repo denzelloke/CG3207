@@ -2,6 +2,13 @@
 
 Prepared: **2026-11-04, Asia/Singapore**.
 
+> **Implementation update:** The game is now implemented under `lab4/demo/`.
+> Start with [the game build/test guide](../demo/TESTING.md) for current controls,
+> interfaces, verification results and the dedicated `NeonTop` build. The body
+> below is the pre-implementation handoff. FPGA synthesis/programming remains
+> to be completed on a usable Vivado installation; this environment reported
+> no valid Vivado license.
+
 Intended recipient: a fresh coding agent with this document and access to the repository. You do not need the earlier conversation to understand the assignment. All paths below are relative to the repository root unless explicitly stated otherwise.
 
 ## 1. Your mission
