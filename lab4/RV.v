@@ -33,7 +33,8 @@
 */
 
 module RV #(
-    parameter PC_INIT = 32'h00400000
+    parameter PC_INIT = 32'h00400000,
+    parameter EXTERNAL_PREDICTOR_CONTROL = 0
 ) (
     input CLK,
     input RESET,
@@ -44,7 +45,9 @@ module RV #(
     output [3:0] WriteMask,    // Column-wise write enable to support sb/sw. Each column is a byte.
     output [31:0] PCF,
     output [31:0] ALUResult,
-    output [31:0] WriteData_out  // Name mangled to support sb/sw
+    output [31:0] WriteData_out,  // Name mangled to support sb/sw
+    input PredictionDisable,     // Used only when EXTERNAL_PREDICTOR_CONTROL=1
+    output [6:0] PerfEvents       // return, entry, MCycle, load stall, miss, branch, retire
 );
 
     // -------------------------------------------------------------------------
@@ -58,6 +61,11 @@ module RV #(
 
     //Fetch stage: Branch prediction
     wire [31:0] PredictedNextPCF;
+    wire [31:0] PredictorNextPCF;
+    // Legacy instances retain their original behavior even with an unconnected
+    // optional control port. Demo mode is latched at reset by the wrapper.
+    assign PredictedNextPCF = (EXTERNAL_PREDICTOR_CONTROL && PredictionDisable)
+                           ? PCF + 32'd4 : PredictorNextPCF;
     wire        predictedTakenF;
 
     // Decode stage: instruction fields and control
@@ -219,7 +227,7 @@ module RV #(
         ActualTakenE,
         ActualTargetE,
         isJumpE,
-        PredictedNextPCF
+        PredictorNextPCF
     );
 
     // -------------------------------------------------------------------------
@@ -438,6 +446,14 @@ module RV #(
 
     //means all admitted instructions have finished, and no mcycle ops left
     assign PipelineEmpty = !ValidD && !ValidE && !ValidM && !ValidW && !Busy && !MCYCLESTALL;
+
+    // Observation only. W advances on every cycle in this fixed-latency core.
+    // Conditional misses deliberately exclude jumps and other recovery events.
+    assign PerfEvents = !RESET ? {
+        ReturnFromInterrupt, InterruptTaken, MCYCLESTALL,
+        (StallD && !MCYCLESTALL), (NotNOPE && isBranchE && MispredictE),
+        (NotNOPE && isBranchE), ValidW
+    } : 7'b0;
 
     // -------------------------------------------------------------------------
     // Module Instatiations

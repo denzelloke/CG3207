@@ -576,16 +576,10 @@ end
     RV #(
         .PC_INIT(PC_INIT)
     ) RV1 (
-        CLK,
-        RESET,
-        IRQ,        //request from InterruptController
-        Instr,
-        ReadData_in,
-        MemRead,
-        MemWrite_out,
-        PC,
-        ALUResult,
-        WriteData_out
+        .CLK(CLK), .RESET(RESET), .IRQ(IRQ),
+        .Instr(Instr), .ReadData_in(ReadData_in), .MemRead(MemRead),
+        .WriteMask(MemWrite_out), .PCF(PC), .ALUResult(ALUResult),
+        .WriteData_out(WriteData_out), .PredictionDisable(1'b0), .PerfEvents()
     );
 
     //----------------------------------------------------------------
