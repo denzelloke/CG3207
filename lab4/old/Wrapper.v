@@ -320,21 +320,18 @@ module Wrapper #(
     (* ASYNC_REG = "TRUE" *) reg [N_PBs-1:0] PB_meta;
     (* ASYNC_REG = "TRUE" *) reg [N_PBs-1:0] PB_sync;
 
-    // Previous centre-button state, used to detect a new press.
-    reg PreviousCentreButton;
+    wire CentreButtonDown; // Centre button after debounce
 
-    // Sample buttons and remember the previous centre-button state.
+    // Synchronise physical buttons to the CPU clock.
     // This synchronises the inputs; it does not remove mechanical bounce.
     always @(posedge CLK) begin
         if (RESET) begin
             PB_meta <= {N_PBs{1'b0}};
             PB_sync <= {N_PBs{1'b0}};
-            PreviousCentreButton <= 1'b0;
         end
         else begin
             PB_meta <= PB;
             PB_sync <= PB_meta;
-            PreviousCentreButton <= PB_sync[1];
         end
     end
 
@@ -345,9 +342,10 @@ module Wrapper #(
     if (dec_DIP)
         ReadData_MMIO = {{32-N_DIPs{1'b0}}, DIP};
 
-    else if (dec_PB)
-        // Software reads synchronised button levels.
+    else if (dec_PB) begin
         ReadData_MMIO = {{(32-N_PBs){1'b0}}, PB_sync};
+        ReadData_MMIO[1] = CentreButtonDown;
+    end
 
     else if (dec_UART_RX && UART_RX_valid)
         ReadData_MMIO = {24'd0, UART_RX};
@@ -560,11 +558,7 @@ end
     wire LoadEnableMask;        // Save new interrupt-enable settings on this write.
     wire [1:0] ACK;             // A 1 acknowledges the corresponding interrupt source.
     wire IRQ;                  // Interrupt request sent to RV.
-    wire ButtonEvent;          // One-cycle centre-button rising-edge pulse; not debounced.
-
-    // Generate an event when the synchronised centre button changes from 0 to 1.
-    assign ButtonEvent =
-        !RESET && PB_sync[1] && !PreviousCentreButton;
+    wire ButtonEvent;          // One-cycle pulse for an accepted, debounced centre-button press.
 
     // Save the enable mask when software writes a full word to IRQ_ENABLE.
     assign LoadEnableMask =
@@ -621,6 +615,19 @@ end
         Pending,
         EnableMask,
         IRQ
+    );
+
+    //----------------------------------------------------------------
+    // Button Debouncer instance
+    //----------------------------------------------------------------
+    ButtonDebouncer #(
+    .DEBOUNCE_CYCLES(62500)
+    ) ButtonDebouncer1 (
+        CLK,
+        RESET,
+        PB_sync[1],
+        CentreButtonDown,
+        ButtonEvent
     );
 
 endmodule
