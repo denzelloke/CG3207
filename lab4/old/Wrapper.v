@@ -80,7 +80,7 @@ module Wrapper #(
     localparam [31:0] IRQ_PENDING_ADDR  = 32'hFFFF0110;     //read which sources have events waiting to be handled
     localparam [31:0] IRQ_ACK_ADDR      = 32'hFFFF0114;     //write 1 to acknowledge that source: bit 0 is timer, bit 1 is button
 
-    localparam IROM_DEPTH_BITS = 13;  //9 for 128 words. Change if your program is larger.
+    localparam IROM_DEPTH_BITS = 15;  //9 for 128 words. Change if your program is larger.
     localparam DMEM_DEPTH_BITS = 9;		//9 for 128 words. Change if your data (const+variable) is larger, and in C/Assembly to set STACK_INIT appropriately.
     localparam MMIO_DEPTH_BITS = 8;
 

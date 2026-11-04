@@ -1,5 +1,15 @@
 # Neon Space Defender handoff — Person 2: interrupts, timer, and safe control-flow integration
 
+> **Ownership update — 2026-11-04:** Performance counters, event-interface integration,
+> counter MMIO/snapshots, measurement tests, and performance overlay are now
+> **LLM implementation responsibilities**, reviewed by the team. Person 3 retains
+> subword datapath semantics and focused verification; each human owner retains
+> correctness of their enhancement. Persons 1/2 review branch/IRQ event semantics.
+> This update supersedes all older Person 3 counter assignments below. The body
+> remains the original planning snapshot, not a current completion report. See
+> [current readiness assessment and completion roadmap](readiness_and_roadmap.md).
+
+
 Self-contained handoff for a fresh LLM chat. Give that chat this file and access to the current repository. The other handoff files are not required to understand this one.
 
 **Assigned role:** Person 2: interrupts, timer, and safe control-flow integration. Read the shared context and then your detailed workstream below. Do not assume ownership of the other students' tasks.
