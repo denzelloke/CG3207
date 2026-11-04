@@ -37,11 +37,11 @@ module RV #(
 ) (
     input CLK,
     input RESET,
-    //input Interrupt,      // for optional future use.
+    input IRQ,                 // Interrupt request from Wrapper's InterruptController
     input [31:0] Instr,
     input [31:0] ReadData_in,  // Name mangled to support lb/lbu/lh/lhu
     output MemRead,
-    output [3:0] WriteMask,  // Column-wise write enable to support sb/sw. Each column is a byte.
+    output [3:0] WriteMask,    // Column-wise write enable to support sb/sw. Each column is a byte.
     output [31:0] PCF,
     output [31:0] ALUResult,
     output [31:0] WriteData_out  // Name mangled to support sb/sw
@@ -54,11 +54,11 @@ module RV #(
     // Fetch stage
     wire [31:0] InstrF;
     wire        WE_PC;
-    wire [31:0] PC_IN;
+    reg [31:0] PC_IN;
 
     //Fetch stage: Branch prediction
     wire [31:0] PredictedNextPCF;
-    wire predictedTakenF;
+    wire        predictedTakenF;
 
     // Decode stage: instruction fields and control
     wire [31:0] InstrD;
@@ -77,6 +77,7 @@ module RV #(
     wire [2:0]  SizeSelD;
     wire [1:0]  MCycleOpD;
     wire        UsesRs1D, UsesRs2D;
+    wire        MRETD;
 
     // Decode stage: register operands and W-to-D forwarding
     wire [31:0] RD1D, RD2D;
@@ -84,8 +85,8 @@ module RV #(
 
     // Decode Stage: Branch Prediction
     wire [31:0] PredictedNextPCD;
-    wire isJumpD, isBranchD;
-    reg ValidD;
+    wire        isJumpD, isBranchD;
+    reg         ValidD;
 
     // Execute stage: pipelined control and operands
     wire [31:0] PCE;
@@ -100,7 +101,8 @@ module RV #(
     wire [4:0]  rdE;
     reg  [4:0]  rs1E, rs2E;
     reg  [1:0]  MCycleOpE;
-    wire MulHSU;
+    wire        MulHSU;
+    reg         MRETE;
 
     // Execute stage: forwarding, ALU, and branch datapath
     reg  [31:0] SrcA_tmp, SrcB_tmp;
@@ -141,6 +143,9 @@ module RV #(
     reg  [4:0]  rs2M;
     wire [31:0] WriteData;
     wire [2:0]  SizeSelM;  
+    reg         ValidM;
+    wire        MemReadEnableM;
+    wire        MemWriteEnableM;
 
     // Write-back stage and register-file write port
     wire        RegWriteW, MemtoRegW;
@@ -150,6 +155,7 @@ module RV #(
     wire [4:0]  rdW;
     wire        WE;
     wire [31:0] WD;
+    reg         ValidW;
 
     // Hazard control
     wire        StallF, StallD, StallE;
@@ -159,12 +165,26 @@ module RV #(
     wire [1:0]  ForwardAE, ForwardBE;
     wire        ForwardM;
 
+    // Interrupt Signals
+    wire MRETExecute;
+    wire PipelineEmpty;
+    wire StopFetchAdmission;        //1 means we are trying to drain the pipeline
+    wire InterruptTaken;
+    wire ReturnFromInterrupt;
+    wire [31:0] InterruptPC;
+    wire [31:0] ReturnPC;
+    wire IRQFlushD;     // Separate from the HazardUnit's existing flush outputs.
+    wire IRQFlushE;     // Separate from the HazardUnit's existing flush outputs.
+
     // -------------------------------------------------------------------------
     // Fetch stage and next-PC selection
     // -------------------------------------------------------------------------
 
     assign InstrF = Instr;
-    assign WE_PC  = MispredictE || !StallF;
+
+    // Allow interrupt entry/return and misprediction redirects even while fetch is held.
+    // Otherwise, advance the PC only when fetch is neither stalled nor blocked for draining.
+    assign WE_PC  = ReturnFromInterrupt || InterruptTaken || MispredictE || (!StallF && !StopFetchAdmission); 
 
     always @(*) begin
         case (PCSrcE)
@@ -175,7 +195,20 @@ module RV #(
         endcase
     end
 
-    assign PC_IN = MispredictE ? ActualNextPCE : PredictedNextPCF; 
+    always @ (*) begin
+        if (ReturnFromInterrupt) begin      //resume the interrupted programme
+            PC_IN = ReturnPC;           
+        end
+        else if (InterruptTaken) begin      //enter the interrupt handler
+            PC_IN = InterruptPC;
+        end
+        else if (MispredictE) begin         //correct an older instruction's prediction
+            PC_IN = ActualNextPCE;
+        end
+        else begin                          //normal predicted fetch
+            PC_IN = PredictedNextPCF;
+        end
+    end
 
     BranchPredictor BranchPredictor1(
         CLK,
@@ -266,7 +299,7 @@ module RV #(
 
     assign Operand1  = SrcA_tmp;
     assign Operand2  = SrcB_tmp;
-    assign IsMCycleE = (ALUControlE == 4'b1111);
+    assign IsMCycleE = ValidE && (ALUControlE == 4'b1111);      //bubble must not start a mul/div op or stall the cpu
     assign MulHSU = (IsMCycleE && (func3E == 3'b010));
 
     // Issue Start only once for the instruction held in Execute.
@@ -283,7 +316,7 @@ module RV #(
     end
 
     always @(posedge CLK) begin
-        if (RESET || FlushE)
+        if (ClearE)                 //Clear E is assigned below before auxiliary pipeline register
             MCycleStarted <= 1'b0;
         else if (Start)
             MCycleStarted <= 1'b1;
@@ -306,46 +339,62 @@ module RV #(
     // Auxiliary pipeline registers for hazard and multi-cycle control
     // -------------------------------------------------------------------------
 
+    assign ClearD = RESET || FlushD || IRQFlushD || (StopFetchAdmission && !StallD);    //Last condition means: Stop accepting new instructions, but clear D only when its current instruction is allowed to leave
+    assign ClearE = RESET || FlushE || IRQFlushE;
+    assign ClearM = RESET || FlushM;
+
     always @(posedge CLK) begin
-        if (RESET || FlushD) begin
+        if (ClearD) begin
             ValidD <= 1'b0;
-        end else if (!StallD) begin
+        end else if (!StallD) begin 
             ValidD <= 1'b1;
         end
 
-        if (RESET || FlushE) begin
+        if (ClearE) begin
             rs1E      <= 5'd0;
             rs2E      <= 5'd0;
             MCycleOpE <= 2'b00;
             ValidE <= 1'b0;
+            MRETE <= 1'b0;
         end
         else if (!StallE) begin
             rs1E      <= rs1D;
             rs2E      <= rs2D;
             MCycleOpE <= MCycleOpD;
             ValidE <= ValidD;
+            MRETE <= MRETD;
         end
 
-        if (FlushM)
+        if (RESET || FlushM) begin
             rs2M <= 5'd0;
-        else
+            ValidM <= 1'b0;
+        end
+        else begin
             rs2M <= rs2E;
-    end
+            ValidM <= ValidE;
+        end
 
-    assign ClearD = RESET || FlushD;
-    assign ClearE = RESET || FlushE;
-    assign ClearM = RESET || FlushM;
+        if (RESET) begin
+            ValidW <= 1'b0;
+        end
+        else begin
+            ValidW <= ValidM;
+        end
+    end
 
     // -------------------------------------------------------------------------
     // Memory stage: external interface and W-to-M store-data forwarding
     // -------------------------------------------------------------------------
 
+    // Only valid M-stage instructions may access memory or peripherals
+    assign MemReadEnableM = MemtoRegM && ValidM && !RESET;
+    assign MemWriteEnableM = MemWriteM && ValidM && !RESET;
+
     // MemRead is required for devices such as the UART console.
-    assign MemRead   = MemtoRegM;
+    assign MemRead   = MemReadEnableM;
     assign ALUResult = ALUResultM;
     assign WriteData = ForwardM ? ResultW : WriteDataM;
 
-    // Current implementation supports word accesses only.
     // For lb/lbu/lh/lhu/sb/sh, derive SizeSel from the decoder (funct3), carry
     // it through the pipeline, and update load extension, store-data alignment,
     // and byte-write enables. See Lab 4 Enhancement: additional instructions.
@@ -358,8 +407,8 @@ module RV #(
     // todo: change WriteMask so that only the appropriate bytes are write enabled
 
     Subword Subword1 (
-        MemtoRegM,       // 1 for load
-        MemWriteM,       // 1 for store
+        MemReadEnableM,       // 1 for load
+        MemWriteEnableM,       // 1 for store
         SizeSelM,  
         ALUResultM[1:0], // stores readwrite address
         ReadData_in,     // full word read from data mem block
@@ -377,7 +426,22 @@ module RV #(
     assign WD      = ResultW;
 
     // Register-file writes are independent of the PC write enable.
-    assign WE = RegWriteW && !RESET;
+    // Only a valid W-stage instruction may write to the register file.
+    assign WE = RegWriteW && !RESET && ValidW;
+
+    // -------------------------------------------------------------------------
+    // Interrupt control
+    // -------------------------------------------------------------------------
+
+    // Only recognise an executing, valid mret instruction.
+    assign MRETExecute = MRETE && ValidE && !StallE && !RESET;
+
+    //means all admitted instructions have finished, and no mcycle ops left
+    assign PipelineEmpty = !ValidD && !ValidE && !ValidM && !ValidW && !Busy && !MCYCLESTALL;
+
+    // -------------------------------------------------------------------------
+    // Module Instatiations
+    // -------------------------------------------------------------------------
 
     DRegister DRegister1 (
         CLK,
@@ -474,14 +538,14 @@ module RV #(
         rs2M,
         rdM,
         rdW,
-        MemtoRegE,
+        MemtoRegE && ValidE,
         MispredictE,
-        RegWriteM,
-        MemWriteM,
-        RegWriteW,
-        MemtoRegW,
-        UsesRs1D,
-        UsesRs2D,
+        RegWriteM && ValidM,
+        MemWriteEnableM,
+        WE,
+        MemtoRegW && ValidW,
+        UsesRs1D && ValidD,
+        UsesRs2D && ValidD,
         MCYCLESTALL,
         StallF,
         StallD,
@@ -540,7 +604,8 @@ module RV #(
         ImmSrc,
         ALUControlD,
         MCycleOpD,
-        SizeSelD
+        SizeSelD,
+        MRETD
     );
 
     PC_Logic PC_Logic1 (
@@ -567,5 +632,23 @@ module RV #(
         WE_PC,
         PC_IN,
         PCF
+    );
+
+    IRQHandler #(
+    .HANDLER_ADDRESS(32'h00400100) // TODO: Must match assembly handler address
+    ) IRQHandler1 (
+        CLK,
+        RESET,
+        IRQ,
+        PCF,                 // ResumePC
+        PipelineEmpty,
+        MRETExecute,
+        StopFetchAdmission,
+        InterruptTaken,
+        ReturnFromInterrupt,
+        InterruptPC,
+        ReturnPC,
+        IRQFlushD,           // FlushD
+        IRQFlushE            // FlushE
     );
 endmodule

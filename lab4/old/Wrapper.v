@@ -61,7 +61,7 @@ module Wrapper #(
     output reg [23:0] OLED_Data,		// 24-bit pixel so as to see easily on the display. <5R, 6G, 8B>, each extended to 8 bits left aligned.
     input [31:0] ACCEL_Data,		// Packed <Temp, X, Y, Z> from MSB to LSB. X, Y, Z are in +/-2g range, 8-bit signed.
     input ACCEL_DReady,			// Accelerometer data ready signal. Mostly not necessary unless you are reading at a very high rate.
-    input RESET,  // Active high. Implemented in TOP as not(BTND) or Internal_reset.
+    input RESET,  // Active high; TOP supplies BTND or internal reset.
     input CLK  // Divided Clock from TOP, shown on LED[8].
 );
 
@@ -71,6 +71,14 @@ module Wrapper #(
     localparam DMEM_BASE = 32'h1001_0000;    	// make sure this is the same as the .data address based on the Memory Configuration set in the assembler/linker
     localparam MMIO_BASE = 32'hFFFF_0000;
     localparam PC_INIT = IROM_BASE;  // PC initialization value - same as IROM_BASE
+
+    // Timer and interrupt registers:
+    localparam [31:0] TIMER_PERIOD_ADDR = 32'hFFFF0100;     //stores no. of CPU cycles per tick at this addr
+    localparam [31:0] TIMER_CTRL_ADDR   = 32'hFFFF0104;     //write bit 0 to enable/disable the timer and apply settings
+    localparam [31:0] TIMER_TICKS_ADDR  = 32'hFFFF0108;     //read how many ticks the timer has generated thus far
+    localparam [31:0] IRQ_ENABLE_ADDR   = 32'hFFFF010C;     //write which sources may interrupt: bit 0 is timer, bit 1 is button
+    localparam [31:0] IRQ_PENDING_ADDR  = 32'hFFFF0110;     //read which sources have events waiting to be handled
+    localparam [31:0] IRQ_ACK_ADDR      = 32'hFFFF0114;     //write 1 to acknowledge that source: bit 0 is timer, bit 1 is button
 
     localparam IROM_DEPTH_BITS = 13;  //9 for 128 words. Change if your program is larger.
     localparam DMEM_DEPTH_BITS = 9;		//9 for 128 words. Change if your data (const+variable) is larger, and in C/Assembly to set STACK_INIT appropriately.
@@ -133,6 +141,23 @@ module Wrapper #(
         dec_CYCLECOUNT  // Cycle count signal
         ;
 
+    // Each signal is 1 when ALUResult matches that register's address.
+    reg dec_TIMER_PERIOD;
+    reg dec_TIMER_CTRL;
+    reg dec_TIMER_TICKS;
+    reg dec_IRQ_ENABLE;
+    reg dec_IRQ_PENDING;
+    reg dec_IRQ_ACK;
+
+    //----------------------------------------------------------------
+    // Timer and Interrupt signals
+    //---------------------------------------------------------------
+    reg [31:0] TimerPeriod;
+    wire [31:0] TicksCounter;    // Total ticks generated; later readable by software.
+
+    wire [1:0] EnableMask;      // Sources currently allowed to interrupt.
+    wire [1:0] Pending;         // Sources with events waiting to be handled.
+    
     //----------------------------------------------------------------
     // Memory declaration
     //-----------------------------------------------------------------
@@ -186,8 +211,16 @@ module Wrapper #(
         dec_SEVENSEG      <= 1'b0;
         dec_CYCLECOUNT    <= 1'b0;
 
-        if (ALUResult[31:DMEM_DEPTH_BITS] == DMEM_BASE[31:DMEM_DEPTH_BITS]) dec_DMEM <= 1'b1;
-        else if (ALUResult[31:MMIO_DEPTH_BITS] == MMIO_BASE[31:MMIO_DEPTH_BITS]) begin
+        //defaults for timer and interrupts
+        dec_TIMER_PERIOD <= 1'b0;
+        dec_TIMER_CTRL   <= 1'b0;
+        dec_TIMER_TICKS  <= 1'b0;
+        dec_IRQ_ENABLE  <= 1'b0;
+        dec_IRQ_PENDING <= 1'b0;
+        dec_IRQ_ACK     <= 1'b0;
+
+        if (ALUResult[31:DMEM_DEPTH_BITS] == DMEM_BASE[31:DMEM_DEPTH_BITS]) dec_DMEM <= 1'b1;           //selects RAM
+        else if (ALUResult[31:MMIO_DEPTH_BITS] == MMIO_BASE[31:MMIO_DEPTH_BITS]) begin                  //selects an existing peripheral
             case (ALUResult[MMIO_DEPTH_BITS-1:2])
                 UART_RX_VALID_OFF[MMIO_DEPTH_BITS-1:2]: dec_UART_RX_VALID <= 1'b1;
                 UART_RX_OFF[MMIO_DEPTH_BITS-1:2]: dec_UART_RX <= 1'b1;
@@ -207,7 +240,19 @@ module Wrapper #(
                 default: bad_MEM_addr <= 1'b1;
             endcase
         end
-        else bad_MEM_addr <= 1'b1;
+        else begin                                                                                      //selects a timer/interrupt register
+            //check the new timer and interrupt register addresses.
+            case (ALUResult)
+                TIMER_PERIOD_ADDR: dec_TIMER_PERIOD <= 1'b1;
+                TIMER_CTRL_ADDR:   dec_TIMER_CTRL   <= 1'b1;
+                TIMER_TICKS_ADDR:  dec_TIMER_TICKS  <= 1'b1;
+                IRQ_ENABLE_ADDR:  dec_IRQ_ENABLE   <= 1'b1;
+                IRQ_PENDING_ADDR: dec_IRQ_PENDING  <= 1'b1;
+                IRQ_ACK_ADDR:     dec_IRQ_ACK      <= 1'b1;
+
+                default: bad_MEM_addr <= 1'b1;                                  
+            endcase
+        end
     end
 
     assign dec_MMIO_read = MemRead || dec_DIP || dec_PB || dec_UART_RX_VALID || dec_UART_RX || dec_UART_TX_READY || dec_UART_TX || dec_CYCLECOUNT || dec_ACCEL_DATA || dec_ACCEL_DREADY ;
@@ -270,20 +315,76 @@ module Wrapper #(
         else cycle_count <= cycle_count + 1;
     end
 
+    // Synchronise physical buttons to the CPU clock.
+    // First stage is used only by the second stage.
+    (* ASYNC_REG = "TRUE" *) reg [N_PBs-1:0] PB_meta;
+    (* ASYNC_REG = "TRUE" *) reg [N_PBs-1:0] PB_sync;
+
+    wire CentreButtonDown; // Centre button after debounce
+
+    // Synchronise physical buttons to the CPU clock.
+    // This synchronises the inputs; it does not remove mechanical bounce.
+    always @(posedge CLK) begin
+        if (RESET) begin
+            PB_meta <= {N_PBs{1'b0}};
+            PB_sync <= {N_PBs{1'b0}};
+        end
+        else begin
+            PB_meta <= PB;
+            PB_sync <= PB_meta;
+        end
+    end
+
     //----------------------------------------------------------------
     // MMIO read
     //----------------------------------------------------------------
-    always @(*) begin  // @posedge CLK only if using synch read for memory
-        if (dec_DIP) ReadData_MMIO <= {{31 - N_DIPs + 1{1'b0}}, DIP};
-        else if (dec_PB) ReadData_MMIO <= {{31 - N_PBs + 1{1'b0}}, PB};
-        else if (dec_UART_RX && UART_RX_valid) ReadData_MMIO <= {24'd0, UART_RX};
-        else if (dec_UART_RX_VALID) ReadData_MMIO <= {31'd0, UART_RX_valid};
-        else if (dec_UART_TX_READY) ReadData_MMIO <= {31'd0, UART_TX_ready};
-        else if (dec_CYCLECOUNT) ReadData_MMIO <= cycle_count;
-        else if (dec_ACCEL_DATA) ReadData_MMIO <= ACCEL_Data;
-        else  // dec_ACCEL_DREADY // the default else to avoid the statement from being incomplete
-            ReadData_MMIO <= {31'd0, ACCEL_DReady};
+    always @(*) begin
+    if (dec_DIP)
+        ReadData_MMIO = {{32-N_DIPs{1'b0}}, DIP};
+
+    else if (dec_PB) begin
+        ReadData_MMIO = {{(32-N_PBs){1'b0}}, PB_sync};
+        ReadData_MMIO[1] = CentreButtonDown;
     end
+
+    else if (dec_UART_RX && UART_RX_valid)
+        ReadData_MMIO = {24'd0, UART_RX};
+
+    else if (dec_UART_RX_VALID)
+        ReadData_MMIO = {31'd0, UART_RX_valid};
+
+    else if (dec_UART_TX_READY)
+        ReadData_MMIO = {31'd0, UART_TX_ready};
+
+    else if (dec_CYCLECOUNT)
+        ReadData_MMIO = cycle_count;
+
+    else if (dec_ACCEL_DATA)
+        ReadData_MMIO = ACCEL_Data;
+
+    else if (dec_ACCEL_DREADY)
+        ReadData_MMIO = {31'd0, ACCEL_DReady};
+
+    // Read the period saved in Wrapper.
+    else if (dec_TIMER_PERIOD)
+        ReadData_MMIO = TimerPeriod;
+
+    // Read the total number of timer ticks.
+    else if (dec_TIMER_TICKS)
+        ReadData_MMIO = TicksCounter;
+
+    // Read which interrupt sources are enabled.
+    else if (dec_IRQ_ENABLE)
+        ReadData_MMIO = {30'd0, EnableMask};
+
+    // Read which interrupt sources need attention.
+    else if (dec_IRQ_PENDING)
+        ReadData_MMIO = {30'd0, Pending};
+
+    // Unhandled reads, including write-only CTRL and ACK, return zero.
+    else
+        ReadData_MMIO = 32'd0;
+end
 
     //----------------------------------------------------------------
     // Delaying the decoded signals for multiplexing (delay only if using synch read for memory)
@@ -298,16 +399,20 @@ module Wrapper #(
     //----------------------------------------------------------------
     integer j;
     always @(posedge CLK) begin
-        if (MemWrite) begin
-            for (j = 0; j < NUM_COL; j = j + 1) begin
-                if (MemWrite_out[j]) begin
-                    if (RESET) SEVENSEGHEX <= 32'd0;
-                    else if (dec_SEVENSEG)
-                        SEVENSEGHEX[j*COL_WIDTH +: COL_WIDTH] <= WriteData_out[j*COL_WIDTH +: COL_WIDTH];
-                end
+    // Reset must work even when no store is occurring.
+    if (RESET) begin
+        SEVENSEGHEX <= 32'd0;
+    end
+    else if (MemWrite && dec_SEVENSEG) begin
+        // Update only the bytes selected by the store.
+        for (j = 0; j < NUM_COL; j = j + 1) begin
+            if (MemWrite_out[j]) begin
+                SEVENSEGHEX[j*COL_WIDTH +: COL_WIDTH]
+                    <= WriteData_out[j*COL_WIDTH +: COL_WIDTH];
             end
         end
     end
+end
 
     //----------------------------------------------------------------
     // Memory-mapped LED write
@@ -425,6 +530,47 @@ module Wrapper #(
     assign LED_PC = PC[15-N_LEDs_OUT+1 : 2];  // debug showing PC
 
     //----------------------------------------------------------------
+    // Timer configuration
+    //----------------------------------------------------------------
+    
+    wire TimerPeriodWrite;
+    wire TimerConfigureWritePulse;
+    wire TimerEvent;             // A tick from Timer; later sent to InterruptController.
+
+    // Accept an aligned, full-word store to the selected register.
+    assign TimerPeriodWrite =
+        !RESET && dec_TIMER_PERIOD && (&MemWrite_out);          
+
+    assign TimerConfigureWritePulse =
+        !RESET && dec_TIMER_CTRL && (&MemWrite_out);
+
+    // Remember the period written by software.
+    always @(posedge CLK) begin
+        if (RESET)
+            TimerPeriod <= 32'b0;
+        else if (TimerPeriodWrite)
+            TimerPeriod <= WriteData_out;
+    end
+
+    //----------------------------------------------------------------
+    // Interrupt controller connections
+    //----------------------------------------------------------------
+    wire LoadEnableMask;        // Save new interrupt-enable settings on this write.
+    wire [1:0] ACK;             // A 1 acknowledges the corresponding interrupt source.
+    wire IRQ;                  // Interrupt request sent to RV.
+    wire ButtonEvent;          // One-cycle pulse for an accepted, debounced centre-button press.
+
+    // Save the enable mask when software writes a full word to IRQ_ENABLE.
+    assign LoadEnableMask =
+        !RESET && dec_IRQ_ENABLE && (&MemWrite_out);
+
+    // Pass acknowledgement bits only during a full-word write to IRQ_ACK.
+    assign ACK =
+        (!RESET && dec_IRQ_ACK && (&MemWrite_out))
+        ? WriteData_out[1:0]
+        : 2'b00;
+
+    //----------------------------------------------------------------
     // RV port map
     //----------------------------------------------------------------
     RV #(
@@ -432,6 +578,7 @@ module Wrapper #(
     ) RV1 (
         CLK,
         RESET,
+        IRQ,        //request from InterruptController
         Instr,
         ReadData_in,
         MemRead,
@@ -439,6 +586,48 @@ module Wrapper #(
         PC,
         ALUResult,
         WriteData_out
+    );
+
+    //----------------------------------------------------------------
+    // Timer instance
+    //----------------------------------------------------------------
+    Timer Timer1 (
+        CLK,
+        RESET,
+        TimerConfigureWritePulse,
+        TimerPeriod,
+        WriteData_out[0],
+        TimerEvent,
+        TicksCounter
+    );
+
+    //----------------------------------------------------------------
+    // Interrupt controller instance
+    //----------------------------------------------------------------
+    InterruptController InterruptController1 (
+        CLK,
+        RESET,
+        TimerEvent,
+        ButtonEvent,
+        LoadEnableMask,
+        WriteData_out[1:0],
+        ACK,
+        Pending,
+        EnableMask,
+        IRQ
+    );
+
+    //----------------------------------------------------------------
+    // Button Debouncer instance
+    //----------------------------------------------------------------
+    ButtonDebouncer #(
+    .DEBOUNCE_CYCLES(62500)
+    ) ButtonDebouncer1 (
+        CLK,
+        RESET,
+        PB_sync[1],
+        CentreButtonDown,
+        ButtonEvent
     );
 
 endmodule

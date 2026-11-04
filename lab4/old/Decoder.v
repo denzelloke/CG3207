@@ -46,7 +46,8 @@ module Decoder (
     output reg [1:0] MCycleOp, // 00 signed multiplication, 01 unsigned multiplication, 10 signed division, 11 unsigned division.
     // Note that the most significant 3 bits are Funct3 all DP instrns. LSB is the same as Funct7[5] DPReg type and DPImm_shifts. For other DPImms, Funct7[5] is 0.
     // It is the same as sub branches, and add all others not mentioned in the line above.
-    output reg [2:0] SizeSel // 0 byte || 1 halfword (S) || 2 word || 4 byte || 5 halfword (U) || ill use 7 as "not memory operation" || 3 is for doubleword, not supported
+    output reg [2:0] SizeSel, // 0 byte || 1 halfword (S) || 2 word || 4 byte || 5 halfword (U) || ill use 7 as "not memory operation" || 3 is for doubleword, not supported
+    output reg MRET         // Recognises the mret assembly code and signals interrupt return
 );
 
 
@@ -83,6 +84,7 @@ module Decoder (
                 if (Funct7 == 7'b0000001) ALUControl = 4'b1111;
                 else ALUControl = {Funct3, Funct7[5]};
                 SizeSel = 3'b111;
+                MRET = 1'b0;
             end
 
             // DP Imm
@@ -97,6 +99,7 @@ module Decoder (
                 ALUControl[3:1] = Funct3;
                 ALUControl[0] = (Funct3 == 3'h5) ? Funct7[5] : 1'b0;
                 SizeSel = 3'b111;
+                MRET = 1'b0;
             end
 
             // branch 
@@ -110,6 +113,7 @@ module Decoder (
                 ImmSrc     = 3'b111;  // B type
                 ALUControl = 4'b0001;  // sub
                 SizeSel    = 3'b111;
+                MRET = 1'b0;
             end
 
             // jal 
@@ -123,6 +127,7 @@ module Decoder (
                 ImmSrc     = 3'b010;  // J type
                 ALUControl = 4'b0000;  // add
                 SizeSel    = 3'b111;
+                MRET = 1'b0;
             end
 
             // auipc 
@@ -136,6 +141,7 @@ module Decoder (
                 ImmSrc     = 3'b000;  // U type
                 ALUControl = 4'b0000;  // add
                 SizeSel    = 3'b111;
+                MRET = 1'b0;
             end
 
             // lui 
@@ -149,6 +155,7 @@ module Decoder (
                 ImmSrc     = 3'b000;  // U type
                 ALUControl = 4'b0000;  // add
                 SizeSel    = 3'b111;
+                MRET = 1'b0;
             end
 
             // jalr
@@ -162,6 +169,7 @@ module Decoder (
                 ImmSrc     = 3'b011;  // I type
                 ALUControl = 4'b0000;  // add
                 SizeSel    = 3'b111;
+                MRET = 1'b0;
             end
 
             // load 
@@ -176,6 +184,7 @@ module Decoder (
                 ALUControl = 4'b0000;  // add
                 SizeSel    = (Funct3 == 3'h0 || Funct3 == 3'h1 || Funct3 == 3'h2 || Funct3 == 3'h4 || Funct3 == 3'h5) ? Funct3 : 3'b111;
                 // 0 byte || 1 halfword (S) || 2 word || 4 byte (U) || 5 halfword (U) || ill use 7 as "not memory operation"
+                MRET = 1'b0;
             end
 
             // store 
@@ -190,6 +199,21 @@ module Decoder (
                 ALUControl = 4'b0000;  // add
                 SizeSel = (Funct3 == 3'h0 || Funct3 == 3'h1 || Funct3 == 3'h2) ? Funct3 : 3'b111;
                 // 0 byte || 1 halfword (S) || 2 word || ill use 7 as "not memory operation"
+                MRET = 1'b0;
+            end
+
+            //MRET
+            7'h73: begin        //ASSEMBLY PROGRAMME MUST HAVE NO OTHER SYSTEM_INSTRUCTION OTHER THAN MRET
+                PCS      = 2'b00;
+                MemtoReg = 0;
+                RegWrite = 0;
+                MemWrite = 0;
+                ALUSrcA  = 2'b00;
+                ALUSrcB  = 2'b00;
+                ImmSrc   = 3'b000;
+                ALUControl = 4'b0000;
+                SizeSel = 3'b111;
+                MRET = 1'b1;        //assert MRET
             end
 
             // default
@@ -203,6 +227,7 @@ module Decoder (
                 ImmSrc     = 3'b000;
                 ALUControl = 4'b0000;
                 SizeSel    = 3'b111;
+                MRET = 1'b0;
             end
         endcase
     end
