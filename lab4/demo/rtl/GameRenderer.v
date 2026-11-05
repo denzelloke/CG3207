@@ -53,10 +53,10 @@ module GameRenderer(input [9:0] x,y,input visible,
             5: begin
                 if(col<12)ch=letter("BRANCHES",8,col-2);
                 else if(col<20)ch=digit(hud[224+:32],col-12);
-                else if(col<33)ch=letter("MISSES",6,col-25);
-                else if(col<41)ch=digit(hud[256+:32],col-33);
-                else if(col<55)ch=letter("UPDATES",7,col-46);
-                else if(col<63)ch=digit(hud[288+:32],col-55);
+                else if(col<35)ch=letter("MISSES/SEC",10,col-24);
+                else if(col<43)ch=digit(hud[256+:32],col-35);
+                else if(col<60)ch=letter("UPDATES/SEC",11,col-48);
+                else if(col<68)ch=digit(hud[288+:32],col-60);
             end
             6: begin
                 if(col<8)ch=letter("PRED",4,col-2);

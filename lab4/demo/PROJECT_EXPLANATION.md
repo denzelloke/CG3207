@@ -384,6 +384,10 @@ All counters are snapshotted together. Software can read the values using severa
 
 The HUD shows integer averages of accumulated measured cycles and instructions per completed update, rather than only the latest update's values.
 
+`MISSES/SEC` and `UPDATES/SEC` now show recent rates, refreshed after at least 60 timer ticks (approximately one second on the board). They use `floor(delta_count × 60 / elapsed_ticks)`, start at zero on restart, and return to zero after a full window without new work. Misses count only the measured update/checksum windows, not every branch executed during the second. Updates/second should normally be near 60 during active play. Accelerated simulation timers shorten this game-time second. Cumulative totals remain in RAM for replay comparisons; BRANCHES remains cumulative.
+
+`IRQ LAT` remains the latest IRQ request-to-accepted-entry latency, in CPU cycles. At 25 MHz, multiply by 0.04 to convert cycles to microseconds. It includes pipeline draining, excludes physical button debounce and handler execution, and is neither a cumulative total nor an average.
+
 ### Boundaries and interpretation
 
 Counter control stores take effect in Memory, retirement is observed in Writeback, and branches are observed in Execute. Instructions overlap these boundaries. These are hardware measurement windows, not exact counts of only the instructions textually inside one function. Using the same boundaries in every mode supports consistent comparison.
@@ -405,6 +409,8 @@ For branch prediction, hold subword mode fixed. For subword access, hold predict
 ## 10. Recorded measurements and supported claims
 
 These are previously documented **simulation measurements** from `TESTING.md` for the 120-update replay. They are not fresh board measurements or a certification that a particular stored bitstream matches the reviewed source.
+
+These measurements predate the per-second HUD change. Re-run the current replay before quoting exact new performance figures: added display code can change instruction addresses and predictor history even though it executes outside the measured windows.
 
 | Configuration | Cycles | Retired instructions | Conditional branches | Conditional misses |
 |---|---:|---:|---:|---:|

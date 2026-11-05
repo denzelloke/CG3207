@@ -22,7 +22,7 @@ The following preview is generated from the RTL renderer with fixed display reco
 
 ## 2. Quick build
 
-Run commands below from the **repository root** (`CG3207/labs`). You need Python 3, Java, the included `rars1_6.jar`, and Vivado for the FPGA build. The simulation tests use Icarus Verilog (`iverilog` and `vvp`).
+Run commands below from the **repository root** (`CG3207`, containing `lab4/` and `rars1_6.jar`). You need Python 3, Java, the included `rars1_6.jar`, and Vivado for the FPGA build. The simulation tests use Icarus Verilog (`iverilog` and `vvp`).
 
 On Ubuntu/Debian, install the simulator with `sudo apt install iverilog`. This supplies both `iverilog` and `vvp`. A missing `iverilog` executable means simulation has not started; it is not an RTL test failure. The runner checks dependencies before assembling or running tests. For an existing local installation, see the explicit executable-path options in section 6.
 
@@ -67,6 +67,45 @@ vivado -mode batch -source lab4/demo/scripts/build.tcl -tclargs lab4/demo/build 
 Open the generated `build/project/neon.xpr`, confirm top `NeonTop`, then run synthesis/implementation/bitstream generation. The build script supplies the correct source set and constraints. Do not add the old VHDL top, old wrapper or duplicate modules from other labs to this project.
 
 ## 3. Program and play
+
+### Setting up the game in the Vivado GUI
+
+Use `scripts/setup_vivado.tcl` for a dedicated, reproducible game project. Save and close any other open project first. In Vivado's **Tcl Console**, source the script using its full path, in braces to protect spaces:
+
+```tcl
+source {C:/Users/USER/Desktop/Y4 S1/Computer Arch/Project/CG3207/lab4/demo/scripts/setup_vivado.tcl}
+```
+
+The script assembles the latest game firmware, creates or opens `build/vivado/Lab4_Neon/Lab4_Neon.xpr`, and configures its design and constraint sources. Python and Java must be available to Vivado through PATH. It leaves the existing historical Lab 4 project untouched. It does not launch synthesis or program the FPGA.
+
+Expected Sources view:
+
+```text
+Lab4_Neon — xc7a100tcsg324-1
+  Design Sources
+    NeonTop (NeonTop.v)             ← synthesis top
+      GameSoC, renderer, timing
+      CPU and supporting modules   ← 28 Verilog source files total
+    game.mem                       ← Memory Initialization Files
+  Constraints / constrs_1
+    NeonTop.xdc                    ← only game pin/clock constraints
+```
+
+| Item | Correct source for the game |
+|---|---|
+| Top | `demo/rtl/NeonTop.v`, module `NeonTop` |
+| ROM source | `demo/software/game.asm` |
+| Generated ROM | `demo/build/game.mem` (4096 32-bit words); generated files are ignored by Git |
+| Constraints | `demo/constraints/NeonTop.xdc` |
+| Device | `xc7a100tcsg324-1`, Nexys4 DDR pinout |
+| Data-memory initialization | Firmware clears RAM at startup; no `AA_DMEM.mem` is required |
+| Hardware clock | Board 100 MHz input; MMCM generates 25 MHz |
+
+Do not mix `AA_IROM.mem`, `AA_DMEM.mem`, `old/Wrapper.v`, `old/TOP_Nexys.vhd`, or `old/TOP_Nexys4DDR.xdc` into the game build. They belong to the historical lab setup. However, the seven CPU files under `old/` listed in the source manifest are still required. Do not add every file in the repository recursively, and do not define `SIMULATION` for synthesis.
+
+After setup, inspect the hierarchy, then run synthesis, implementation and Generate Bitstream. The GUI project's generated bitstream normally appears under `build/vivado/Lab4_Neon/Lab4_Neon.runs/impl_1/NeonTop.bit`; the separate batch build below uses `build/fpga/NeonTop.bit`. Reassemble after changes to `game.asm` and rebuild the bitstream; an older bitstream does not pick up an edited ROM automatically. Source the setup script again to refresh the dedicated project and ROM, or run `assemble.py` directly for a firmware-only refresh.
+
+### Programming
 
 1. Connect the FPGA board's VGA port to a monitor and connect/program through USB/JTAG.
 2. Select the desired switches before releasing **DOWN/BTND** reset. For normal enhanced gameplay set **SW0, SW1, SW2 ON** and leave SW3–SW5 OFF.
@@ -206,13 +245,17 @@ All HUD numbers except CHECKSUM are displayed as decimal digits.
 | CYC/UPDATE | Integer average of measured CPU cycles over completed updates |
 | INST/UPDATE | Integer average of retired instructions in those measurement windows |
 | BRANCHES | Total resolved conditional branches in the update windows |
-| MISSES | Total conditional-branch next-PC mismatches; excludes jump redirects |
+| MISSES/SEC | Recent measured conditional-branch next-PC mismatches per second; excludes jump redirects and work outside update windows |
 | IRQ LAT | Last IRQ assertion-to-entry latency in CPU cycles; `--------` when IRQ mode is disabled |
-| UPDATES | Completed software updates |
+| UPDATES/SEC | Recent completed software updates per second; normally near 60 during play |
 | DROPPED | Timer intervals skipped because more than one accumulated before the next update |
 | PRED / IRQ / SUBWORD / REPLAY | Reset-latched mode bits |
 
-The measured region starts with a clear+enable MMIO command before `update_game`, includes the update counter and deterministic checksum work, and ends with a snapshot+stop command. It excludes idle waiting, HUD formatting, decimal conversions and display publication. Counter control cycles themselves do not increment. Pipeline instructions already in flight at the control boundaries follow the documented event-stage timing; compare the same bracket in every mode.
+The two rate fields refresh after at least 60 timer ticks (approximately one second with the production timer). Each displays `floor(delta_count * 60 / elapsed_ticks)`, so a delayed publication is normalized by actual elapsed ticks. They start at zero on restart, hold the last result between refreshes, and become zero after a full inactive window in the menu, game-over or replay-complete state. A transition window can contain partial activity. Accelerated simulation timers make these game-time seconds shorter in simulation wall time. BRANCHES remains cumulative; CYC/UPDATE and INST/UPDATE remain round averages. Cumulative misses and update counts remain in RAM for replay validation; HUD words 8 and 9 now carry rates instead of totals.
+
+The measured region starts with a clear+enable MMIO command before `update_game`, includes the update counter and deterministic checksum work, and ends with a snapshot+stop command. It excludes idle waiting, HUD formatting, rate calculation, decimal conversions and display publication. Counter control cycles themselves do not increment. Pipeline instructions already in flight at the control boundaries follow the documented event-stage timing; compare the same bracket in every mode.
+
+Run `python lab4/demo/tests/test_hud_rates.py` to execute the firmware's rate-calculation assembly in RARS. It checks initial/held values, a normal window, delayed publication, inactive windows, timer and cumulative-count wraparound, integer rounding, and preservation of cumulative totals. This does not substitute for RTL/board verification.
 
 An externally triggered ISR that overlaps the measurement window is included. During deterministic replay, most timer handlers finish before the measured update begins, so polling versus interrupt update costs can be equal. This is expected. IRQ mode here still waits in a software loop: there is no WFI or clock-gating power claim. IRQ latency is measured separately across pipeline draining, not across physical debounce.
 
@@ -270,6 +313,8 @@ RAM is initialized by firmware. Primary state offsets from `0x10010000`:
 | `0x50` | Latest state checksum |
 | `0x60` | Current update's input bits |
 | `0x68`, `0x6C`, `0x70`, `0x74` | Total measured cycles, branches, misses, retired instructions |
+| `0x78`, `0x7C`, `0x80` | Rate-window start tick, previous cumulative misses, previous update count |
+| `0x84`, `0x88` | Displayed misses/second and updates/second |
 | `0x100–0x11F` | Four packed enemy records, eight bytes each |
 | `0x140–0x15F` | Four packed bullet records, eight bytes each |
 
@@ -313,7 +358,7 @@ All new peripheral writes require aligned full-word stores. RAM still honors byt
 
 Counter priority is reset > clear > snapshot > count. Any command updates the enable bit; command cycles do not count. Snapshot reads remain stable while live counting continues. Clear zeros live and snapshot counters. Use `3` to clear+start and `4` to snapshot+stop, as the firmware does.
 
-HUD words 0–13: state, score BCD, health, wave BCD, modes, average cycles BCD, average retired BCD, branch total BCD, miss total BCD, updates BCD, dropped intervals BCD, checksum hex, IRQ latency BCD, difficulty. Words 14/15 are reserved.
+HUD words 0–13: state, score BCD, health, wave BCD, modes, average cycles BCD, average retired BCD, branch total BCD, misses/second BCD, updates/second BCD, dropped intervals BCD, checksum hex, IRQ latency BCD, difficulty. Words 14/15 are reserved.
 
 Display record: word0 = `{y[15:0],x[15:0]}`, word1 low nibble = kind (1 player, 2 enemy, 3 bullet), word2 low 12 bits = RGB444, word3 bit0 = visible. The renderer uses slots 0–8. Slots 9–15 are reserved.
 
@@ -350,6 +395,8 @@ Recorded behavioral RTL results during implementation (2026-11-04, Icarus 12):
 - Complete board-top behavioral port test: `BOARD PORTS PASS`, using the simulation clock model.
 
 Sample **simulation** measurements for the 120-update replay (measured update windows only):
+
+These are historical results from before the per-second HUD change. Re-run replay for exact current measurements: even code outside measurement windows can change instruction addresses and predictor history. The gameplay checksum excludes the added rate fields.
 
 | Predictor | Subwords | Total cycles | Retired instructions | Conditional branches | Conditional misses |
 |---|---|---:|---:|---:|---:|

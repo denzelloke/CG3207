@@ -384,6 +384,13 @@ new_round:
     sw zero,108(s0)
     sw zero,112(s0)
     sw zero,116(s0)
+    # HUD rates: independent snapshots; preserve cumulative replay metrics.
+    lw t0,264(s1)
+    sw t0,120(s0)           # start tick of rate window
+    sw zero,124(s0)         # previous cumulative conditional misses
+    sw zero,128(s0)         # previous completed updates
+    sw zero,132(s0)         # displayed misses/second
+    sw zero,136(s0)         # displayed updates/second
     lw t0,816(s1)
     sw t0,40(s0)
     addi t0,s0,320
@@ -654,6 +661,30 @@ publish:
     bne t0,zero,publish_skip
     addi sp,sp,-16
     sw ra,0(sp)
+    # Refresh rates after >=60 timer ticks (~1 second on the board).
+    # Normalize by actual elapsed ticks if publication was delayed.
+    # Run outside the performance window; bcd may freely clobber t0..t4 later.
+    lw t0,264(s1)
+    lw t1,120(s0)
+    sub t2,t0,t1
+    li t3,60
+    bltu t2,t3,publish_rate_done
+    sw t0,120(s0)
+    lw t0,112(s0)
+    lw t1,124(s0)
+    sw t0,124(s0)
+    sub t0,t0,t1
+    mul t0,t0,t3
+    divu t0,t0,t2
+    sw t0,132(s0)
+    lw t0,24(s0)
+    lw t1,128(s0)
+    sw t0,128(s0)
+    sub t0,t0,t1
+    mul t0,t0,t3
+    divu t0,t0,t2
+    sw t0,136(s0)
+publish_rate_done:
     # Player: packed x/y, kind, RGB444, visibility
     lw t0,16(s0)
     li t1,0x01b80000         # y=440
@@ -733,10 +764,10 @@ publish_retired:
     lw a0,108(s0)
     jal ra,bcd
     sw a0,860(s1)
-    lw a0,112(s0)
+    lw a0,132(s0)           # recent measured conditional misses/second
     jal ra,bcd
     sw a0,864(s1)
-    lw a0,24(s0)
+    lw a0,136(s0)           # recent completed updates/second
     jal ra,bcd
     sw a0,868(s1)
     lw a0,36(s0)
