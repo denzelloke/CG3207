@@ -11,15 +11,15 @@ module test_game #(parameter UPDATE_LIMIT=120);
     wire [31:0] sevenseg,pc;
     integer count=0,mode=15,deadline=0;
     integer entries=0,branches=0,misses=0;
-    GameSoC #(.DEBOUNCE_CYCLES(3),.TICK_CYCLES(40000),.REPLAY_UPDATES(UPDATE_LIMIT)) dut
+    GameSoC #(.DEBOUNCE_CYCLES(3),.TICK_CYCLES(16000),.REPLAY_UPDATES(UPDATE_LIMIT)) dut
         (clk,reset,buttons,switches,frame_boundary,objects,hud,leds,sevenseg,pc);
     always @(negedge clk) begin
         count=count+1;
-        frame_boundary=(count%40000==0);
+        frame_boundary=(count%16000==0);
         if(dut.events[5]) entries=entries+1;
         if(dut.events[1]) branches=branches+1;
         if(dut.events[2]) misses=misses+1;
-        if(count>(UPDATE_LIMIT+20)*50000) $fatal(1,"Game timeout pc=%h state=%h updates=%d",pc,dut.dmem[0],dut.dmem[6]);
+        if(count>(UPDATE_LIMIT+20)*20000) $fatal(1,"Game timeout pc=%h state=%h updates=%d",pc,dut.dmem[0],dut.dmem[6]);
     end
     initial begin
         if($value$plusargs("MODE=%d",mode)) begin end

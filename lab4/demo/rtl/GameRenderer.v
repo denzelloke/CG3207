@@ -45,30 +45,24 @@ module GameRenderer(input [9:0] x,y,input visible,
             4: begin
                 if(col<14)ch=letter("CYC/UPDATE",10,col-2);
                 else if(col<22)ch=digit(hud[160+:32],col-14);
-                else if(col<39)ch=letter("INST/UPDATE",11,col-26);
-                else if(col<47)ch=digit(hud[192+:32],col-39);
-                else if(col<61)ch=letter("IRQ LAT",7,col-52);
-                else if(col<69)ch=mode[1]?digit(hud[384+:32],col-61):"-";
+                else if(col<54)ch=letter("INST/UPDATE",11,col-40);
+                else if(col<62)ch=digit(hud[192+:32],col-54);
             end
             5: begin
-                if(col<12)ch=letter("BRANCHES",8,col-2);
-                else if(col<20)ch=digit(hud[224+:32],col-12);
-                else if(col<35)ch=letter("MISSES/SEC",10,col-24);
-                else if(col<43)ch=digit(hud[256+:32],col-35);
-                else if(col<60)ch=letter("UPDATES/SEC",11,col-48);
-                else if(col<68)ch=digit(hud[288+:32],col-60);
+                if(col<14)ch=letter("BRANCHES",8,col-2);
+                else if(col<22)ch=digit(hud[224+:32],col-14);
+                else if(col<54)ch=letter("MISSES/SEC",10,col-40);
+                else if(col<62)ch=digit(hud[256+:32],col-54);
             end
             6: begin
-                if(col<8)ch=letter("PRED",4,col-2);
-                else if(col==8)ch=mode[0]?"1":"0";
-                else if(col<17)ch=letter("IRQ",3,col-13);
-                else if(col==17)ch=mode[1]?"1":"0";
-                else if(col<30)ch=letter("SUBWORD",7,col-22);
-                else if(col==30)ch=mode[2]?"1":"0";
-                else if(col<42)ch=letter("REPLAY",6,col-35);
-                else if(col==42)ch=mode[3]?"1":"0";
-                else if(col<56)ch=letter("DROPPED",7,col-48);
-                else if(col<64)ch=digit(hud[320+:32],col-56);
+                if(col<14)ch=letter("UPDATES/SEC",11,col-2);
+                else if(col<22)ch=digit(hud[288+:32],col-14);
+                else if(col<45)ch=letter("PRED",4,col-40);
+                else if(col==45)ch=mode[0]?"1":"0";
+                else if(col<53)ch=letter("IRQ",3,col-49);
+                else if(col==53)ch=mode[1]?"1":"0";
+                else if(col<65)ch=letter("SUBWORD",7,col-57);
+                else if(col==65)ch=mode[2]?"1":"0";
             end
             14: begin
                 if(state==0)ch=letter("PRESS UP TO START",17,col-31);

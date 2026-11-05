@@ -11,7 +11,7 @@ The target is the **Nexys4 DDR / Artix-7 xc7a100tcsg324-1** pinout already prese
 - Left/right/fire/start buttons are synchronized and debounced. Switch settings are latched at hardware reset.
 - Display records and HUD values are published atomically at the start of vertical blank. Hardware renders CPU-provided state; it does not run the game rules.
 - Prediction bypass, polling/interrupt scheduling, and direct-subword/word-mask routines coexist in one firmware image.
-- Real counters measure cycles, retired instructions, conditional branches/misses, load/MCycle stalls and IRQ entry/return. The HUD shows average update cost, branch totals, IRQ latency and missed update deadlines.
+- Real counters measure cycles, retired instructions, conditional branches/misses, load/MCycle stalls and IRQ entry/return. The HUD shows average update cost, branch totals, misses/second and updates/second in two aligned columns. IRQ latency, replay mode and dropped intervals remain internal diagnostics, hidden from the performance panel.
 - A deterministic replay and independent Python gameplay specification check that all eight enhancement combinations produce the same gameplay result.
 
 Optional audio is not part of this version.
@@ -171,7 +171,7 @@ Use **SW0–2 ON, SW3–5 OFF** first.
 | Restart | UP restores score 0, health 3, wave 1 without reprogramming |
 | Mode latch | Moving switches alone does not change HUD modes; DOWN applies them |
 | Stalls | HUD, sync and video remain stable during CPU multiply/divide activity |
-| Timing | DROPPED stays at zero under the normal workload |
+| Timing | UPDATES/SEC stays near 60 during normal active play |
 
 Do not claim board validation until you have observed these results on the physical board. Save the matching `firmware.json`, bitstream and timing reports with your demonstration evidence.
 
@@ -259,10 +259,10 @@ All HUD numbers except CHECKSUM are displayed as decimal digits.
 | INST/UPDATE | Integer average of retired instructions in those measurement windows |
 | BRANCHES | Total resolved conditional branches in the update windows |
 | MISSES/SEC | Recent measured conditional-branch next-PC mismatches per second; excludes jump redirects and work outside update windows |
-| IRQ LAT | Last IRQ assertion-to-entry latency in CPU cycles; `--------` when IRQ mode is disabled |
+| IRQ latency (internal only) | Last IRQ assertion-to-entry latency in CPU cycles |
 | UPDATES/SEC | Recent completed software updates per second; normally near 60 during play |
-| DROPPED | Timer intervals skipped because more than one accumulated before the next update |
-| PRED / IRQ / SUBWORD / REPLAY | Reset-latched mode bits |
+| Dropped intervals (internal only) | Timer intervals skipped because more than one accumulated before the next update |
+| PRED / IRQ / SUBWORD | Visible reset-latched mode bits; replay mode is hidden from the performance panel |
 
 The two rate fields refresh after at least 60 timer ticks (approximately one second with the production timer). Each displays `floor(delta_count * 60 / elapsed_ticks)`, so a delayed publication is normalized by actual elapsed ticks. They start at zero on restart, hold the last result between refreshes, and become zero after a full inactive window in the menu, game-over or replay-complete state. A transition window can contain partial activity. Accelerated simulation timers make these game-time seconds shorter in simulation wall time. BRANCHES remains cumulative; CYC/UPDATE and INST/UPDATE remain round averages. Cumulative misses and update counts remain in RAM for replay validation; HUD words 8 and 9 now carry rates instead of totals.
 
@@ -389,8 +389,7 @@ Display writes are accepted only when busy=0. A commit freezes shadow state unti
 | Switch changes have no effect | Press DOWN reset; modes are intentionally latched |
 | Test says memory file missing | Run from the build directory or use `test.py`; reassemble before build; check `game.mem` is included |
 | Different replay checksum | Check difficulty, mode SW3, final update count, firmware hash, missed deadlines and synthesis rerun after memory changes |
-| DROPPED increases | Check actual CPU clock/period, unexpected IRQ storm, simulation overrides and implementation timing |
-| IRQ LAT shows dashes | Polling mode selected; no IRQ entry latency exists for that mode |
+| UPDATES/SEC stays below 60 while playing | Check actual CPU clock/period, unexpected IRQ storm, simulation overrides and implementation timing; inspect the internal dropped counter |
 | Vivado says no valid license | Use a Vivado installation licensed for this FPGA/tool version; assembly and Icarus tests can still run independently |
 | XSim exits without PASS | Inspect log; historical sandbox startup failures returned exit code zero despite an error |
 | Old wrapper tests fail immediately | Some expect their own ROM fixture; do not run them against the game image |
