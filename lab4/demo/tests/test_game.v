@@ -2,8 +2,6 @@
 module test_game #(parameter UPDATE_LIMIT=120);
     reg clk=0,reset=1;
     always #5 clk=~clk;
-    reg pixel_clk=0;always #20 pixel_clk=~pixel_clk;
-    integer pixel_count=0;
     reg [3:0] buttons=0;
     reg [15:0] switches=15;
     reg frame_boundary=0;
@@ -15,11 +13,8 @@ module test_game #(parameter UPDATE_LIMIT=120);
     integer entries=0,branches=0,misses=0;
     integer traced_updates=-1;
     GameSoC #(.DEBOUNCE_CYCLES(3),.TICK_CYCLES(16000),.REPLAY_UPDATES(UPDATE_LIMIT)) dut
-        (clk,reset,pixel_clk,reset,buttons,switches,frame_boundary,objects,hud,leds,sevenseg,pc);
-    always @(negedge pixel_clk) begin
-        pixel_count=pixel_count+1;
-        frame_boundary=(pixel_count%4000==0);
-    end
+        (clk,reset,buttons,switches,frame_boundary,objects,hud,leds,sevenseg,pc);
+    always @(negedge clk) frame_boundary=(count%4000==0);
     always @(negedge clk) begin
         count=count+1;
         if($test$plusargs("TRACE") && dut.dmem[6]!==traced_updates)begin

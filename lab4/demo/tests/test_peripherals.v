@@ -6,7 +6,7 @@ module test_peripherals;
     PerformanceCounters c(clk,reset,control_write,control,events,index,data,enabled);
     reg frame=0,wh=0,wo=0,commit=0;reg[5:0] wi=0;reg[31:0] wd=0;
     wire busy;wire[31:0] seq;wire[2047:0] objects;wire[511:0] hud;
-    DisplayRegisters d(clk,reset,clk,reset,frame,wh,wo,commit,wi,wd,busy,seq,objects,hud);
+    DisplayRegisters d(clk,reset,frame,wh,wo,commit,wi,wd,busy,seq,objects,hud);
     reg [3:0] buttons=0;wire[3:0] held,pressed;wire[15:0] sw;
     GameInputs #(.DEBOUNCE_CYCLES(3)) g(clk,reset,buttons,16'h1234,held,pressed,sw);
     integer pulses=0;

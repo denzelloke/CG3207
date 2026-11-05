@@ -1,16 +1,11 @@
 `timescale 1ns/1ps
 module test_game_controls;
     reg clk=0,reset=1;always #5 clk=~clk;
-    reg pixel_clk=0;always #20 pixel_clk=~pixel_clk;
-    integer pixel_count=0;
     reg[3:0] buttons=0;reg[15:0] switches=7;
     reg frame=0;wire[2047:0] objects;wire[511:0] hud;wire[15:0]led;wire[31:0]seg,pc;
     integer cycles=0,old_count,mode=7,old_x,old_score,old_wave,i,active_count,difficulty;
     GameSoC #(.DEBOUNCE_CYCLES(3),.TICK_CYCLES(16000)) dut
-        (clk,reset,pixel_clk,reset,buttons,switches,frame,objects,hud,led,seg,pc);
-    always @(negedge pixel_clk) begin
-        pixel_count=pixel_count+1;frame=(pixel_count%1000==0);
-    end
+        (clk,reset,buttons,switches,frame,objects,hud,led,seg,pc);
     always @(negedge clk) begin
         cycles=cycles+1;
         if(cycles>2500000)$fatal(1,"Controls timeout state=%d pc=%h",dut.dmem[0],pc);

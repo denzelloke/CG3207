@@ -9,7 +9,6 @@ module GameSoC #(
     parameter REPLAY_UPDATES=600
 ) (
     input clk, reset,
-    input pixel_clk, pixel_reset,
     input [3:0] buttons,
     input [15:0] switches,
     input frame_boundary,
@@ -97,7 +96,7 @@ module GameSoC #(
         wdata[2:0],events,addr[5:2],perf_data,perf_enabled);
     wire display_busy;
     wire [31:0] frame_sequence;
-    DisplayRegisters display1(clk,cpu_reset,pixel_clk,pixel_reset,frame_boundary,
+    DisplayRegisters display1(clk,cpu_reset,frame_boundary,
         word_write && addr>=32'hffff0340 && addr<32'hffff0380,
         word_write && addr>=32'hffff0400 && addr<32'hffff0500,
         word_write && addr==32'hffff0300 && wdata[0],addr[7:2],wdata,

@@ -1,39 +1,28 @@
 `timescale 1ns/1ps
-// 100 MHz input -> 800 MHz MMCM VCO. CPU = 800 MHz / CPU_CLK_DIVIDE.
-// Pixel clock always stays 25 MHz. Change ONLY CPU_CLK_DIVIDE for CPU sweeps.
-module NeonTop #(parameter integer CPU_CLK_DIVIDE=16)
+// Single 25 MHz clock drives both the CPU and VGA timing.
+module NeonTop
     (input CLK_undiv,input [15:0] DIP,input [2:0] PB,
     input START,RESET,
     output [15:0] LED,
     output reg [6:0] SevenSegCat,output reg [7:0] SevenSegAn,output DP,
     output reg [3:0] VGA_R,VGA_G,VGA_B,output reg VGA_HS,VGA_VS);
-    localparam integer CPU_HZ=800000000/CPU_CLK_DIVIDE;
-    localparam integer TICK_CYCLES=(CPU_HZ+30)/60;
-    localparam integer DEBOUNCE_CYCLES=CPU_HZ/100;
-    localparam integer SCAN_CYCLES=CPU_HZ/6000;
+    localparam integer TICK_CYCLES=416667;
+    localparam integer DEBOUNCE_CYCLES=250000;
     wire cpu_clk,pixel_clk,locked;
 `ifdef SIMULATION
     // Behavioural clock model for the fixed 100 MHz board oscillator.
     // Delays are simulation-only; hardware uses the MMCM below.
-    reg sim_cpu_clk=0;
-    always #(CPU_CLK_DIVIDE*0.625) sim_cpu_clk=~sim_cpu_clk;
-    assign cpu_clk=sim_cpu_clk;
     reg [1:0] divider=0;
     always @(posedge CLK_undiv) divider<=divider+1'b1;
-    assign pixel_clk=divider[1];
+    assign cpu_clk=divider[1]; assign pixel_clk=cpu_clk;
     assign locked=1'b1;
-    initial if(CPU_CLK_DIVIDE<8 || CPU_CLK_DIVIDE>128)
-        $fatal(1,"CPU_CLK_DIVIDE must be 8..128 (100 to 6.25 MHz)");
 `else
-    wire cpu_clock_raw,pixel_clock_raw,feedback_raw,feedback;
+    wire clock_raw,feedback_raw,feedback;
     MMCME2_BASE #(.CLKIN1_PERIOD(10.0),.CLKFBOUT_MULT_F(8.0),
-        .DIVCLK_DIVIDE(1),.CLKOUT0_DIVIDE_F(CPU_CLK_DIVIDE*1.0),
-        .CLKOUT1_DIVIDE(32),.STARTUP_WAIT("FALSE")) clock_manager (
+        .DIVCLK_DIVIDE(1),.CLKOUT0_DIVIDE_F(32.0),.STARTUP_WAIT("FALSE")) clock_manager (
         .CLKIN1(CLK_undiv),.CLKFBIN(feedback),.RST(1'b0),.PWRDWN(1'b0),
-        .CLKFBOUT(feedback_raw),.CLKOUT0(cpu_clock_raw),
-        .CLKOUT1(pixel_clock_raw),.LOCKED(locked));
-    BUFG cpu_clock_buffer(.I(cpu_clock_raw),.O(cpu_clk));
-    BUFG pixel_clock_buffer(.I(pixel_clock_raw),.O(pixel_clk));
+        .CLKFBOUT(feedback_raw),.CLKOUT0(clock_raw),.LOCKED(locked));
+    BUFG clock_buffer(.I(clock_raw),.O(cpu_clk)); assign pixel_clk=cpu_clk;
     BUFG feedback_buffer(.I(feedback_raw),.O(feedback));
 `endif
     // Common asynchronous assertion; independent synchronous release per domain.
@@ -56,7 +45,7 @@ module NeonTop #(parameter integer CPU_CLK_DIVIDE=16)
         end
     end
     wire cpu_reset=cpu_reset_sync[2] || !(&cpu_startup);
-    wire pixel_reset=pixel_reset_sync[2] || !(&pixel_startup);
+    wire pixel_reset=cpu_reset;
     wire [9:0] x,y;
     wire visible,hs,vs,frame_boundary;
     wire [2047:0] objects;
@@ -65,8 +54,7 @@ module NeonTop #(parameter integer CPU_CLK_DIVIDE=16)
     wire [11:0] rgb;
     VgaTiming timing(pixel_clk,pixel_reset,x,y,visible,hs,vs,frame_boundary);
     GameSoC #(.TICK_CYCLES(TICK_CYCLES),.DEBOUNCE_CYCLES(DEBOUNCE_CYCLES)) soc
-        (cpu_clk,cpu_reset,pixel_clk,pixel_reset,{START,PB},DIP,
-         frame_boundary,objects,hud,LED,sevenseg,pc);
+        (cpu_clk,cpu_reset,{START,PB},DIP,frame_boundary,objects,hud,LED,sevenseg,pc);
     GameRenderer renderer(x,y,visible,objects,hud,rgb);
     always @(posedge pixel_clk) begin
         if(pixel_reset) begin VGA_R<=0;VGA_G<=0;VGA_B<=0;VGA_HS<=1;VGA_VS<=1;end

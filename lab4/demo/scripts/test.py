@@ -49,8 +49,6 @@ def main():
         run(cc+parameters+['-s',top,'-o',str(output)]+list(map(str,sources))+[str(path)],build,build/(top+'_compile.log'))
         for extra in variants:tests.append((top,output,extra))
     if a.suite in ('all','units'):
-        add('test_display_cdc',[DEMO/'rtl/DisplayRegisters.v'],
-            [[f'+CPU_HALF={half}'] for half in [5,7,20,37]])
         add('test_peripherals',[DEMO/'rtl'/f for f in ['PerformanceCounters.v','DisplayRegisters.v','GameInputs.v']]+[LAB/'ButtonDebouncer.v'])
         add('test_video',[DEMO/'rtl'/f for f in ['VgaTiming.v','GameRenderer.v','Font5x7.v']],[['+DUMP']])
     if a.suite in ('all','core'):
@@ -69,8 +67,6 @@ def main():
     if a.suite in ('all','controls'):add('test_game_controls',SOC,[[f'+MODE={m}'] for m in (0,7,48,55)])
     if a.suite=='board':
         add('test_board',SOC+[DEMO/'rtl'/f for f in ['VgaTiming.v','Font5x7.v','GameRenderer.v','NeonTop.v']])
-    if a.suite in ('all','clocks'):
-        add('test_clock_domains',SOC+[DEMO/'rtl'/f for f in ['VgaTiming.v','Font5x7.v','GameRenderer.v','NeonTop.v']])
     def simulate(item):
         top,output,extra=item;name=top+('_'+'_'.join(x.lstrip('+').replace('=','') for x in extra) if extra else '')
         cwd=build/'legacy' if top=='test_Wrapper_TimerIRQ' else build
