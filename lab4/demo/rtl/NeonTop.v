@@ -8,6 +8,7 @@ module NeonTop
     output reg [3:0] VGA_R,VGA_G,VGA_B,output reg VGA_HS,VGA_VS);
     localparam integer TICK_CYCLES=416667;
     localparam integer DEBOUNCE_CYCLES=250000;
+    localparam integer SCAN_CYCLES=25000000/6000; // ~6 kHz digit scan at 25 MHz
     wire cpu_clk,pixel_clk,locked;
 `ifdef SIMULATION
     // Behavioural clock model for the fixed 100 MHz board oscillator.
