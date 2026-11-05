@@ -130,10 +130,10 @@ Enemy and bullet arrays use eight-byte records:
 
 Not every field is used by every object type. The reserved field is a **byte**, not a bit. This is the enemy/bullet record layout; the player and global variables are stored separately.
 
-Four enemies and four bullet slots occupy:
+Seven enemy slots, four player bullet slots and four enemy bullet slots occupy:
 
 ```text
-8 records × 8 bytes = 64 bytes
+15 records × 8 bytes = 120 bytes
 ```
 
 This is the size of those arrays, not the entire game's memory usage.
@@ -205,7 +205,7 @@ Packing and subword support are separate:
 - **Packing determines how much space the data occupies.**
 - **Subword instructions determine how efficiently the CPU accesses the packed data.**
 
-Both modes use the same 64-byte enemy/bullet arrays. Turning SW2 on does not reduce allocated RAM or change the record layout.
+Both modes use the same 120-byte enemy/bullet arrays. Turning SW2 on does not reduce allocated RAM or change the record layout. Difficulty activates 4–7 enemies; unused enemy slots are zeroed. Enemy shots use the same packed layout, with signed dx for aimed fire.
 
 Subword support also does not reduce physical shifting/masking hardware. It adds dedicated access logic that avoids executing a longer software sequence on the general CPU datapath. Because both modes are compiled into the comparison firmware, this switch is not a demonstration of a smaller program image either.
 
@@ -229,7 +229,7 @@ These become conditional branches in the assembly.
 
 ### Static sites versus runtime branches
 
-The reviewed source contains:
+The earlier game (before enemy combat) contained:
 
 | Region | Explicit conditional branch sites |
 |---|---:|
@@ -237,7 +237,7 @@ The reviewed source contains:
 | Checksum routine | 3 |
 | Whole program, outside macro definitions | 58 |
 
-There are also 33 subword macro invocation sites across the program. Each expands to an additional conditional branch selecting the access mode; 23 are inside `update_game`.
+That version also had 33 subword macro invocation sites across the program, 23 inside `update_game`. The combat update adds accesses and branches for seven enemies, aimed hostile shots and hit protection; these historical counts must not be presented as current counts. Each macro expands to an additional conditional branch selecting the access mode.
 
 These are source-site counts, not a disassembly audit of a particular bitstream. A branch inside a loop executes repeatedly, so runtime counts are much larger. The documented 120-update replay executed **17,241 conditional branches within the measured windows**. That includes measured checksum and mode-selection work, not only gameplay decisions.
 
@@ -476,7 +476,7 @@ The current “baseline” in our performance table means prediction bypassed an
 
 The predictor's declared per-entry state is a valid bit, 25-bit tag, 32-bit target, jump bit and two-bit counter: 62 bits per entry, or **1,984 bits of declared table state** across 32 entries. This is a logical storage count, not a claim of 1,984 physical flip-flops or a measured LUT/BRAM cost. Synthesis determines the implementation.
 
-The subword enhancement does not reduce the enemy/bullet arrays below 64 bytes when enabled. Both access modes use those same records. It also does not remove the ordinary ALU/shifter needed for other instructions.
+The subword enhancement does not reduce the enemy/bullet arrays below 120 bytes when enabled. Both access modes use those same records. It also does not remove the ordinary ALU/shifter needed for other instructions.
 
 There is no quantified baseline-versus-enhanced area result in the measurements used by this guide. To obtain one, build both versions for the same FPGA with the same clock constraint and tool settings, keeping the demo and performance instrumentation equivalent. Compare LUTs, flip-flops, distributed RAM, BRAM and DSP usage, and identify which differences belong to the CPU rather than the renderer or other shared peripherals.
 

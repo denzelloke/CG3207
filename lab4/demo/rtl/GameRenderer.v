@@ -97,12 +97,12 @@ module GameRenderer(input [9:0] x,y,input visible,
             rgb=12'h235;
         if((y==128 || y==460) && x>=16 && x<624)rgb=12'h067;
         if(state!=0) begin
-            for(n=0;n<9;n=n+1) begin
+            for(n=0;n<16;n=n+1) begin
                 ox={16'b0,objects[n*128+:16]};oy={16'b0,objects[n*128+16+:16]};
                 kind={28'b0,objects[n*128+32+:4]};
                 color=objects[n*128+64+:12];
                 lx={22'b0,x}-ox;ly={22'b0,y}-oy;
-                w=(kind==3)?4:24;h=(kind==3)?10:16;
+                w=(kind==3 || kind==4)?4:24;h=(kind==3 || kind==4)?10:16;
                 sprite_pixel=0;
                 if(objects[n*128+96] && lx>=0 && ly>=0 && lx<w && ly<h) begin
                     case(kind)
@@ -110,6 +110,7 @@ module GameRenderer(input [9:0] x,y,input visible,
                         2: sprite_pixel=(ly>=3 && ly<13) || (ly<3 && lx>=5 && lx<19)
                                         || (ly>=13 && (lx<5 || lx>=19));
                         3: sprite_pixel=1;
+                        4: sprite_pixel=(ly<7 || (lx>=1 && lx<3));
                         default: sprite_pixel=0;
                     endcase
                     if(sprite_pixel) begin
