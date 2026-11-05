@@ -21,10 +21,14 @@ module test_video;
         end
         objects[5*128+:32]={16'd300,16'd318};objects[5*128+32+:32]=3;
         objects[5*128+64+:32]=12'hfe4;objects[5*128+96]=1;
+        // Highest slot must render too: hostile shot, orange downward tip.
+        objects[15*128+:32]={16'd320,16'd400};objects[15*128+32+:32]=4;
+        objects[15*128+64+:32]=12'hf52;objects[15*128+96]=1;
         repeat(2)@(negedge clk);reset=0;
         repeat(420000)begin
             #1;
             if(visible)begin
+                if(x==401 && y==328 && rgb!==12'hf52)$fatal(1,"Hostile last-slot sprite missing");
                 pixels=pixels+1;
                 if(dump)$fwrite(fd,"%0d %0d %0d\n",rgb[11:8]*17,rgb[7:4]*17,rgb[3:0]*17);
             end else if(rgb!==0)$fatal(1,"RGB outside visible frame");

@@ -5,6 +5,8 @@
 # Modes: SW0 predictor, SW1 IRQ, SW2 direct subwords, SW3 600-update replay,
 # SW5:4 difficulty. Mode changes require BTND reset; BTNU restarts a round.
 # Packed record: x:u16,y:u16,health/active:u8,dx:i8,kind:u8,reserved:u8.
+# Seven enemy slots at RAM+256, four player shots at +320, four hostile
+# shots at +352. Globals +140/+144/+148: fire countdown/shooter/hit grace.
 
 # These macros execute equivalent accesses on the SAME packed layout. The
 # fallback never touches ISR-shared data. Macro labels are unique in RARS.
@@ -391,10 +393,11 @@ new_round:
     sw zero,128(s0)         # previous completed updates
     sw zero,132(s0)         # displayed misses/second
     sw zero,136(s0)         # displayed updates/second
+    sw zero,148(s0)         # damage grace period
     lw t0,816(s1)
     sw t0,40(s0)
     addi t0,s0,320
-    li t1,8
+    li t1,16               # clear both projectile pools
 clear_bullets:
     sw zero,0(t0)
     addi t0,t0,4
@@ -411,12 +414,32 @@ round_return:
     ret
 
 new_wave:
+    lw t0,60(s0)
+    slli t0,t0,4
+    li t1,90
+    sub t0,t1,t0
+    sw t0,140(s0)
+    sw zero,144(s0)
+    addi t0,s0,352
+    li t1,8
+clear_hostile_wave:
+    sw zero,0(t0)
+    addi t0,t0,4
+    addi t1,t1,-1
+    bne t1,zero,clear_hostile_wave
     addi s3,s0,256
     li s4,0
-    li s5,96
+    li s5,64
 wave_init:
+    sw zero,0(s3)
+    sw zero,4(s3)
+    lw t0,60(s0)
+    addi t0,t0,4
+    bge s4,t0,wave_next
     S16 (s5,s3,0)
-    li t0,144
+    andi t0,s4,1
+    slli t0,t0,5
+    addi t0,t0,144
     S16 (t0,s3,2)
     lw t0,60(s0)
     srli t0,t0,1
@@ -424,11 +447,16 @@ wave_init:
     S8 (t0,s3,4)
     lw t0,60(s0)
     addi t0,t0,2
+    andi t1,s4,1
+    beq t1,zero,wave_velocity
+    neg t0,t0
+wave_velocity:
     S8 (t0,s3,5)
+wave_next:
     addi s3,s3,8
-    addi s5,s5,128
+    addi s5,s5,80
     addi s4,s4,1
-    li t0,4
+    li t0,7
     bne s4,t0,wave_init
     ret
 
@@ -438,6 +466,11 @@ update_game:
     lw t0,0(s0)
     li t1,1
     bne t0,t1,update_return
+    lw t0,148(s0)
+    beq t0,zero,grace_done
+    addi t0,t0,-1
+    sw t0,148(s0)
+grace_done:
     lw s5,16(s0)
     andi t0,s9,4
     beq t0,zero,move_right
@@ -496,7 +529,7 @@ bullet_loop:
     blt s6,t0,bullet_off
     S16 (s6,s3,2)
     addi s7,s0,256
-    li s8,4
+    li s8,7
 collision_loop:
     L8 (t0,s7,4)
     beq t0,zero,collision_next
@@ -531,16 +564,36 @@ bullet_next:
     bne s4,zero,bullet_loop
 
     lw t0,24(s0)
-    andi t0,t0,7             # enemy movement every eighth update
-    bne t0,zero,count_enemies
+    andi t0,t0,3             # movement every fourth update
+    bne t0,zero,hostile_update
     addi s3,s0,256
-    li s4,4
+    li s4,7
 enemy_loop:
     L8 (t0,s3,4)
     beq t0,zero,enemy_next
     L16 (s5,s3,0)
     L16 (s6,s3,2)
     LS8 (s7,s3,5)
+    # Staggered zigzags and vertical bob; descend at each phase boundary.
+    li t0,7
+    sub t0,t0,s4
+    slli t0,t0,3
+    lw t1,24(s0)
+    add t0,t0,t1
+    andi t1,t0,63
+    bne t1,zero,enemy_bob
+    neg s7,s7
+    S8 (s7,s3,5)
+    lw t1,60(s0)
+    addi t1,t1,4
+    add s6,s6,t1
+enemy_bob:
+    andi t0,t0,32
+    li t1,1
+    beq t0,zero,enemy_bob_apply
+    li t1,-1
+enemy_bob_apply:
+    add s6,s6,t1
     add s5,s5,s7
     li t0,16
     blt s5,t0,enemy_reverse
@@ -575,10 +628,117 @@ enemy_next:
     addi s3,s3,8
     addi s4,s4,-1
     bne s4,zero,enemy_loop
+hostile_update:
+    # Move existing shots before firing: new shots appear at the muzzle.
+    addi s3,s0,352
+    li s4,4
+hostile_loop:
+    L8 (t0,s3,4)
+    beq t0,zero,hostile_next
+    L16 (s5,s3,0)
+    L16 (s6,s3,2)
+    LS8 (s7,s3,5)
+    add s5,s5,s7
+    lw t0,60(s0)
+    addi t0,t0,3
+    add s6,s6,t0
+    li t0,16
+    blt s5,t0,hostile_off
+    li t0,620
+    bgt s5,t0,hostile_off
+    li t0,460
+    bge s6,t0,hostile_off
+    S16 (s5,s3,0)
+    S16 (s6,s3,2)
+    lw t0,16(s0)
+    addi t1,t0,24
+    bge s5,t1,hostile_next
+    addi t1,s5,4
+    bge t0,t1,hostile_next
+    li t0,456
+    bge s6,t0,hostile_next
+    addi t1,s6,10
+    li t0,440
+    bge t0,t1,hostile_next
+    lw t0,148(s0)
+    bne t0,zero,hostile_off
+    lw t0,8(s0)
+    beq t0,zero,hostile_off
+    addi t0,t0,-1
+    sw t0,8(s0)
+    li t1,45
+    sw t1,148(s0)
+    bne t0,zero,hostile_off
+    li t0,2
+    sw t0,0(s0)
+hostile_off:
+    S8 (zero,s3,4)
+hostile_next:
+    addi s3,s3,8
+    addi s4,s4,-1
+    bne s4,zero,hostile_loop
+    lw t0,8(s0)
+    beq t0,zero,count_enemies
+    lw t0,140(s0)
+    addi t0,t0,-1
+    sw t0,140(s0)
+    bgt t0,zero,count_enemies
+    lw t0,60(s0)
+    slli t0,t0,4
+    li t1,90
+    sub t0,t1,t0
+    sw t0,140(s0)
+    addi s3,s0,352
+    li s4,4
+hostile_free:
+    L8 (t0,s3,4)
+    beq t0,zero,find_shooter
+    addi s3,s3,8
+    addi s4,s4,-1
+    bne s4,zero,hostile_free
+    j count_enemies
+find_shooter:
+    li s8,7
+shooter_loop:
+    lw t0,144(s0)
+    slli t1,t0,3
+    addi s7,s0,256
+    add s7,s7,t1
+    addi t0,t0,1
+    li t1,7
+    blt t0,t1,shooter_cursor
+    li t0,0
+shooter_cursor:
+    sw t0,144(s0)
+    L8 (t0,s7,4)
+    bne t0,zero,hostile_spawn
+    addi s8,s8,-1
+    bne s8,zero,shooter_loop
+    j count_enemies
+hostile_spawn:
+    L16 (s5,s7,0)
+    addi s5,s5,10
+    L16 (s6,s7,2)
+    addi s6,s6,16
+    S16 (s5,s3,0)
+    S16 (s6,s3,2)
+    li t0,1
+    S8 (t0,s3,4)
+    li t0,0
+    lw t1,60(s0)
+    beq t1,zero,hostile_aimed
+    lw t1,16(s0)
+    addi t1,t1,10
+    beq t1,s5,hostile_aimed
+    li t0,1
+    bgt t1,s5,hostile_aimed
+    li t0,-1
+hostile_aimed:
+    S8 (t0,s3,5)
 count_enemies:
     li s5,0
     addi s3,s0,256
-    li s4,4
+    li s4,7
 count_loop:
     L8 (t0,s3,4)
     add s5,s5,t0
@@ -616,8 +776,20 @@ hash_globals:
     xor a0,a0,t2
     lw t2,28(s0)
     xor a0,a0,t2
+    # Scheduling and grace affect future gameplay, so hash them too.
+    addi t0,s0,140
+    li t1,3
+hash_combat:
+    lw t2,0(t0)
+    slli t3,a0,5
+    srli t4,a0,27
+    or a0,t3,t4
+    xor a0,a0,t2
+    addi t0,t0,4
+    addi t1,t1,-1
+    bne t1,zero,hash_combat
     addi t0,s0,256
-    li t1,8
+    li t1,14
 hash_enemies:
     lw t2,0(t0)
     slli t3,a0,5
@@ -628,7 +800,7 @@ hash_enemies:
     addi t1,t1,-1
     bne t1,zero,hash_enemies
     addi t0,s0,320
-    li t1,8
+    li t1,16               # player and enemy shots
 hash_bullets:
     lw t2,0(t0)
     slli t3,a0,5
@@ -692,12 +864,16 @@ publish_rate_done:
     sw t0,1024(s1)
     li t0,1
     sw t0,1028(s1)
+    lw t1,148(s0)
+    srli t1,t1,2
+    andi t1,t1,1
+    xor t0,t0,t1            # flash the ship during damage grace
     sw t0,1036(s1)
     li t0,0x0ef
     sw t0,1032(s1)
     addi s3,s0,256
     addi s4,s1,1040
-    li s5,4
+    li s5,7
 publish_enemy:
     L16 (t0,s3,0)
     L16 (t1,s3,2)
@@ -733,6 +909,24 @@ publish_bullet:
     addi s4,s4,16
     addi s5,s5,-1
     bne s5,zero,publish_bullet
+    addi s3,s0,352
+    li s5,4
+publish_hostile:
+    L16 (t0,s3,0)
+    L16 (t1,s3,2)
+    slli t1,t1,16
+    or t0,t0,t1
+    sw t0,0(s4)
+    li t0,4
+    sw t0,4(s4)
+    li t0,0xf52
+    sw t0,8(s4)
+    L8 (t0,s3,4)
+    sw t0,12(s4)
+    addi s3,s3,8
+    addi s4,s4,16
+    addi s5,s5,-1
+    bne s5,zero,publish_hostile
     lw t0,0(s0)
     sw t0,832(s1)           # HUD[0] state
     lw a0,4(s0)

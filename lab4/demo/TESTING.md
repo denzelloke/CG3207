@@ -6,12 +6,12 @@ The target is the **Nexys4 DDR / Artix-7 xc7a100tcsg324-1** pinout already prese
 
 ## 1. What is implemented
 
-- RISC-V assembly runs movement, firing, four enemies, four bullets, collisions, damage, score, wave progression, game over and restart.
+- RISC-V assembly runs movement, firing, 4–7 enemies, four player bullets, four enemy bullets, collisions, damage, score, wave progression, game over and restart.
 - Separate MMCM outputs drive the CPU (default **50 MHz**) and video (fixed **25 MHz**). VGA is 640×480 with 800×525 totals, approximately **59.524 Hz**, negative sync. A request/acknowledgement handshake transfers complete display snapshots between domains. The CPU's asynchronous memory-read contract is preserved.
 - Left/right/fire/start buttons are synchronized and debounced. Switch settings are latched at hardware reset.
 - Display records and HUD values are published atomically at the start of vertical blank. Hardware renders CPU-provided state; it does not run the game rules.
 - Prediction bypass, polling/interrupt scheduling, and direct-subword/word-mask routines coexist in one firmware image.
-- Real counters measure cycles, retired instructions, conditional branches/misses, load/MCycle stalls and IRQ entry/return. The HUD shows average update cost, branch totals, IRQ latency and missed update deadlines.
+- Real counters measure cycles, retired instructions, conditional branches/misses, load/MCycle stalls and IRQ entry/return. The HUD shows average update cost, branch totals, misses/second and updates/second in two aligned columns. IRQ latency, replay mode and dropped intervals remain internal diagnostics, hidden from the performance panel.
 - A deterministic replay and independent Python gameplay specification check that all eight enhancement combinations produce the same gameplay result.
 
 Optional audio is not part of this version.
@@ -46,7 +46,7 @@ Generated files are isolated in `lab4/demo/build/`:
 | `fpga/*rpt` | Utilization, timing, DRC and clock reports |
 | `fpga/neon_synth.v` | Functional post-synthesis netlist |
 
-The game assembles to **1,046 words / 4,184 bytes** at initial implementation. The demo wrapper reserves **16 KiB instruction ROM and 4 KiB RAM**. `assemble.py` checks ROM overflow. Recheck `firmware.json` after edits; source line count is not a memory-size measurement.
+The combat update assembles to **1,497 words / 5,988 bytes**. The demo wrapper reserves **16 KiB instruction ROM and 4 KiB RAM**. `assemble.py` checks ROM overflow. Recheck `firmware.json` after edits; source line count is not a memory-size measurement.
 
 **Do not replace `lab4/AA_IROM.mem` for this build.** The game top reads its dedicated `game.mem`. You do not need to modify the historical Wrapper's depth parameters or replace the enhancement test image.
 
@@ -161,10 +161,21 @@ Game rules:
 - The ship moves 5 pixels per simulation update and stays between x=16 and x=600.
 - Up to four bullets can be active. Holding fire creates a new bullet when a slot and cooldown permit; a short debounced press is retained until the next update.
 - Bullets move upward 8 pixels/update. A hit consumes the bullet and reduces enemy health. A destroyed enemy awards 10 points exactly once.
-- Enemies move every eighth update, reverse at the side boundaries and descend. Difficulty increases their speed and, at levels 2–3, health.
+- Enemies move every fourth update in staggered zigzags, bob vertically, and gradually descend. They also reverse and descend at the side boundaries.
+- Orange enemy shots travel downward; at difficulty 1–3 they also angle toward the ship's position when fired. Dodge them with LEFT/RIGHT. Yellow shots belong to the player.
+- A hostile shot costs one health and is consumed. The ship flashes during 45 updates of hit protection (~0.75 seconds); further shots are consumed without additional damage. Invasion damage still applies normally.
 - An enemy reaching the invasion line removes one player health. At zero health the game stops and displays GAME OVER.
 - When all enemies are gone and the player is alive, the next wave starts. Wave progression increases descent distance, with a cap.
 - UP starts a clean round with score 0, health 3 and wave 1.
+
+| SW5:4 | Enemies per wave | Enemy health | Shot interval (updates) | Shot speed (pixels/update) |
+|---|---:|---:|---:|---:|
+| 00 | 4 | 1 | 90 | 3 |
+| 01 | 5 | 1 | 74 | 4 |
+| 10 | 6 | 2 | 58 | 5 |
+| 11 | 7 | 2 | 42 | 6 |
+
+One live enemy fires per interval, rotating through the fleet. Both projectile pools are capped at four shots. A new wave clears hostile shots; restarting clears both pools and hit protection. Select difficulty before pressing DOWN reset.
 
 ## 4. First board acceptance checklist
 
@@ -176,7 +187,9 @@ Use **SW0–2 ON, SW3–5 OFF** first.
 | Start | UP reveals ship and four enemies; state starts cleanly |
 | Movement | LEFT/RIGHT move in the correct direction; ship clamps at edges |
 | Fire | CENTER fires; holding repeats; releasing stops after queued press/cooldown behavior |
-| Pool capacity | At most four bullets are visible; no out-of-bounds artifacts |
+| Pool capacity | At most four yellow player shots and four orange enemy shots; no out-of-bounds artifacts |
+| Enemy fire | Orange shots descend; a hit removes one health and the ship flashes briefly |
+| Difficulty | DOWN applies SW5:4; 4, 5, 6 or 7 enemies spawn |
 | Collision | Enemy takes damage/disappears; score increases by 10 on destruction, once |
 | Wave | Clear all enemies; next formation appears and wave increments |
 | Damage | Allow enemies to descend to the invasion line; health decreases |
@@ -184,7 +197,7 @@ Use **SW0–2 ON, SW3–5 OFF** first.
 | Restart | UP restores score 0, health 3, wave 1 without reprogramming |
 | Mode latch | Moving switches alone does not change HUD modes; DOWN applies them |
 | Stalls | HUD, sync and video remain stable during CPU multiply/divide activity |
-| Timing | DROPPED stays at zero under the normal workload |
+| Timing | UPDATES/SEC stays near 60 during normal active play |
 
 Do not claim board validation until you have observed these results on the physical board. Save the matching `firmware.json`, bitstream and timing reports with your demonstration evidence.
 
@@ -197,10 +210,10 @@ Expected standard difficulty-0 result:
 ```text
 REPLAY COMPLETE
 UPDATES 00000600
-SCORE   00000030
+SCORE   00000010
 HEALTH  3
 WAVE    00000001
-CHECKSUM 74E9EB63
+CHECKSUM 5240E8A2
 ```
 
 All eight combinations of SW0–2 must reach the same checksum and gameplay state. Their performance values may differ. Press UP to repeat the same replay from a clean game state, or change switches and press DOWN to reset the predictor for a cold-start comparison.
@@ -212,7 +225,7 @@ python3 lab4/demo/scripts/reference_game.py --updates 600 --difficulty 0
 python3 lab4/demo/scripts/reference_game.py --updates 600 --difficulty 3
 ```
 
-The replay checksum covers score, health, wave, player position, update count, cooldown, enemy records and bullet records. It excludes timings, selected implementation modes, missed deadlines and display/ISR bookkeeping. Identical checksums are strong regression evidence but not a formal proof; the directed control tests check individual game rules separately.
+The replay checksum covers score, health, wave, player position, update count, player/enemy firing cooldowns, shooter cursor, hit protection, seven enemy records and both bullet pools. It excludes timings, selected implementation modes, missed deadlines and display/ISR bookkeeping. Identical checksums are strong regression evidence but not a formal proof; the directed control tests check individual game rules separately.
 
 If the board finishes with a different checksum, first check difficulty and image identity. If those match, save the observed checksum/modes and investigate before reporting a speedup.
 
@@ -224,14 +237,14 @@ The runner assembles the real firmware, compiles the real pipeline and periphera
 python3 lab4/demo/scripts/test.py
 ```
 
-The default replay tests use **120 updates** to keep simulation practical, with a faster simulated timer and shortened debounce. They do not change the game rules or firmware instruction image. Expected difficulty-0 checksum: **`679B398E`**, score 10, health 3, wave 1. The production top uses the normal timer/debounce values and 600-update replay.
+The default replay tests use **120 updates** to keep simulation practical, with a faster simulated timer and shortened debounce. They do not change the game rules or firmware instruction image. Expected difficulty-0 checksum: **`FE0BBB72`**, score 0, health 3, wave 1. The production top uses the normal timer/debounce values and 600-update replay.
 
 | Suite | Coverage |
 |---|---|
 | `--suite units` | Hand-counted counter traces; enable/clear/snapshot priority, freeze, wrap; display atomic commit and rejected busy writes; input glitch/hold/release/repress; complete VGA geometry/blanking |
 | `--suite core` | Existing timer, interrupt-controller, IRQ-handler, 96-scenario CPU interrupt regression and historical-wrapper timer/IRQ compatibility |
 | `--suite game` | All eight predictor/IRQ/subword combinations running firmware replay on RTL, counters, deadlines, stack restoration, IRQ presence/absence, reference checksum |
-| `--suite controls` | Actual button start/movement/fire; clamp boundaries; seeded collision/score-once; wave transition, invasion/game-over and restart, in baseline and enhanced modes |
+| `--suite controls` | Button controls, boundaries, score-once, waves, invasion, enemy fire/aim/speed, hostile hits and grace, projectile expiry, zigzag movement and restart; baseline/enhanced at difficulties 0 and 3 |
 | default `--suite all` | All of the above |
 
 The additional `--suite board` runs the entire `NeonTop` with the portable simulation clock and checks its physical output ports over two VGA frames. It is separate because it takes longer than the focused video test.
@@ -272,10 +285,10 @@ All HUD numbers except CHECKSUM are displayed as decimal digits.
 | INST/UPDATE | Integer average of retired instructions in those measurement windows |
 | BRANCHES | Total resolved conditional branches in the update windows |
 | MISSES/SEC | Recent measured conditional-branch next-PC mismatches per second; excludes jump redirects and work outside update windows |
-| IRQ LAT | Last IRQ assertion-to-entry latency in CPU cycles; `--------` when IRQ mode is disabled |
+| IRQ latency (internal only) | Last IRQ assertion-to-entry latency in CPU cycles |
 | UPDATES/SEC | Recent completed software updates per second; normally near 60 during play |
-| DROPPED | Timer intervals skipped because more than one accumulated before the next update |
-| PRED / IRQ / SUBWORD / REPLAY | Reset-latched mode bits |
+| Dropped intervals (internal only) | Timer intervals skipped because more than one accumulated before the next update |
+| PRED / IRQ / SUBWORD | Visible reset-latched mode bits; replay mode is hidden from the performance panel |
 
 The two rate fields refresh after at least 60 timer ticks (approximately one second with the production timer). Each displays `floor(delta_count * 60 / elapsed_ticks)`, so a delayed publication is normalized by actual elapsed ticks. They start at zero on restart, hold the last result between refreshes, and become zero after a full inactive window in the menu, game-over or replay-complete state. A transition window can contain partial activity. Accelerated simulation timers make these game-time seconds shorter in simulation wall time. BRANCHES remains cumulative; CYC/UPDATE and INST/UPDATE remain round averages. Cumulative misses and update counts remain in RAM for replay validation; HUD words 8 and 9 now carry rates instead of totals.
 
@@ -341,8 +354,10 @@ RAM is initialized by firmware. Primary state offsets from `0x10010000`:
 | `0x68`, `0x6C`, `0x70`, `0x74` | Total measured cycles, branches, misses, retired instructions |
 | `0x78`, `0x7C`, `0x80` | Rate-window start tick, previous cumulative misses, previous update count |
 | `0x84`, `0x88` | Displayed misses/second and updates/second |
-| `0x100–0x11F` | Four packed enemy records, eight bytes each |
-| `0x140–0x15F` | Four packed bullet records, eight bytes each |
+| `0x8C`, `0x90`, `0x94` | Enemy fire countdown, next shooter index, hit-protection countdown |
+| `0x100–0x137` | Seven packed enemy records, eight bytes each (unused slots zeroed) |
+| `0x140–0x15F` | Four packed player bullet records, eight bytes each |
+| `0x160–0x17F` | Four packed enemy bullet records, eight bytes each |
 
 Each object record is x:u16 at +0, y:u16 at +2, health/active:u8 at +4, signed dx:i8 at +5, and reserved bytes +6/+7. Both software implementations access this same layout. The fallback uses aligned LW/SW and masks/shifts; the enhanced path uses LHU/LBU/LB/SH/SB. LH remains covered by enhancement tests rather than being artificially added to gameplay.
 
@@ -400,8 +415,7 @@ Display writes are accepted only when CPU-domain busy=0. A commit freezes the CP
 | Switch changes have no effect | Press DOWN reset; modes are intentionally latched |
 | Test says memory file missing | Run from the build directory or use `test.py`; reassemble before build; check `game.mem` is included |
 | Different replay checksum | Check difficulty, mode SW3, final update count, firmware hash, missed deadlines and synthesis rerun after memory changes |
-| DROPPED increases | Check actual CPU clock/period, unexpected IRQ storm, simulation overrides and implementation timing |
-| IRQ LAT shows dashes | Polling mode selected; no IRQ entry latency exists for that mode |
+| UPDATES/SEC stays below 60 while playing | Check actual CPU clock/period, unexpected IRQ storm, simulation overrides and implementation timing; inspect the internal dropped counter |
 | Vivado says no valid license | Use a Vivado installation licensed for this FPGA/tool version; assembly and Icarus tests can still run independently |
 | XSim exits without PASS | Inspect log; historical sandbox startup failures returned exit code zero despite an error |
 | Old wrapper tests fail immediately | Some expect their own ROM fixture; do not run them against the game image |
@@ -410,7 +424,7 @@ Display writes are accepted only when CPU-domain busy=0. A commit freezes the CP
 
 The current run's exact automated results are recorded in `build/test_results.json` and individual logs. A successful Icarus test runs the real Verilog CPU/peripherals; a Python reference result alone does not verify RTL.
 
-Recorded behavioral RTL results during implementation (2026-11-04, Icarus 12):
+Historical behavioral RTL results before enemy combat (2026-11-04, Icarus 12). These checksums and performance measurements do not describe the current firmware:
 
 - All eight 120-update comparison modes: checksum `679B398E`, score 10, health 3, wave 1, zero missed deadlines; matched the independent gameplay specification.
 - Baseline (mode 8) and fully enhanced (mode 15) 600-update replays: checksum `74E9EB63`, score 30, health 3, wave 1, zero missed deadlines; both matched the independent gameplay specification. Logs are under `build/long/` for this implementation run.

@@ -66,7 +66,7 @@ def main():
         modes=[int(m,0) for m in a.modes.split(',')]
         if any(not m&8 for m in modes):raise SystemExit('Replay tests require switch bit3=1')
         add('test_game',SOC,[[f'+MODE={mode}'] for mode in modes])
-    if a.suite in ('all','controls'):add('test_game_controls',SOC,[['+MODE=0'],['+MODE=7']])
+    if a.suite in ('all','controls'):add('test_game_controls',SOC,[[f'+MODE={m}'] for m in (0,7,48,55)])
     if a.suite=='board':
         add('test_board',SOC+[DEMO/'rtl'/f for f in ['VgaTiming.v','Font5x7.v','GameRenderer.v','NeonTop.v']])
     if a.suite in ('all','clocks'):
