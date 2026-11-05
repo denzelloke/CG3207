@@ -18,7 +18,9 @@ def main():
     p.add_argument('--iverilog',default=os.environ.get('IVERILOG','iverilog'))
     p.add_argument('--ivl-base',default=os.environ.get('IVL_BASE'))
     p.add_argument('--vvp',default=os.environ.get('VVP','vvp'))
-    p.add_argument('--suite',choices=['all','units','game','controls','core','board'],default='all')
+    p.add_argument('--suite',choices=['all','units','game','controls','core','board','clocks'],default='all')
+    p.add_argument('--cpu-divide',type=int,default=16,
+                   help='Clock-domain test CPU divider: 800 MHz / divider; default 16 = 50 MHz')
     p.add_argument('--jobs',type=int,default=2)
     p.add_argument('--updates',type=int,default=120)
     p.add_argument('--modes',default='8,9,10,11,12,13,14,15',help='Replay mode switch values; bit3 must be set')
@@ -42,10 +44,13 @@ def main():
         path=(LAB/'Testbenches' if legacy else DEMO/'tests')/(top+'.v')
         output=build/(top+'.vvp')
         parameters=[f'-Ptest_game.UPDATE_LIMIT={a.updates}'] if top=='test_game' else []
-        if top=='test_board':parameters+=['-DSIMULATION']
+        if top in ('test_board','test_clock_domains'):parameters+=['-DSIMULATION']
+        if top=='test_clock_domains':parameters+=[f'-Ptest_clock_domains.CPU_DIVIDE={a.cpu_divide}']
         run(cc+parameters+['-s',top,'-o',str(output)]+list(map(str,sources))+[str(path)],build,build/(top+'_compile.log'))
         for extra in variants:tests.append((top,output,extra))
     if a.suite in ('all','units'):
+        add('test_display_cdc',[DEMO/'rtl/DisplayRegisters.v'],
+            [[f'+CPU_HALF={half}'] for half in [5,7,20,37]])
         add('test_peripherals',[DEMO/'rtl'/f for f in ['PerformanceCounters.v','DisplayRegisters.v','GameInputs.v']]+[LAB/'ButtonDebouncer.v'])
         add('test_video',[DEMO/'rtl'/f for f in ['VgaTiming.v','GameRenderer.v','Font5x7.v']],[['+DUMP']])
     if a.suite in ('all','core'):
@@ -64,6 +69,8 @@ def main():
     if a.suite in ('all','controls'):add('test_game_controls',SOC,[['+MODE=0'],['+MODE=7']])
     if a.suite=='board':
         add('test_board',SOC+[DEMO/'rtl'/f for f in ['VgaTiming.v','Font5x7.v','GameRenderer.v','NeonTop.v']])
+    if a.suite in ('all','clocks'):
+        add('test_clock_domains',SOC+[DEMO/'rtl'/f for f in ['VgaTiming.v','Font5x7.v','GameRenderer.v','NeonTop.v']])
     def simulate(item):
         top,output,extra=item;name=top+('_'+'_'.join(x.lstrip('+').replace('=','') for x in extra) if extra else '')
         cwd=build/'legacy' if top=='test_Wrapper_TimerIRQ' else build

@@ -61,7 +61,7 @@ Paths in this table are relative to `lab4/`.
 
 | Module | Role in the game |
 |---|---|
-| `demo/rtl/NeonTop.v` | Connects board pins, generates the shared 25 MHz clock/reset, connects video modules and scans the seven-segment display |
+| `demo/rtl/NeonTop.v` | Connects board pins, generates separate CPU (default 50 MHz) and VGA (fixed 25 MHz) clocks with per-domain reset, connects video modules and scans the seven-segment display |
 | `demo/rtl/GameSoC.v` | Connects the CPU to instruction ROM, data RAM and memory-mapped peripherals |
 | `RV.v` | Executes the assembly using the five-stage pipeline and integrated enhancements |
 | `demo/rtl/GameInputs.v` | Synchronizes physical inputs and instantiates button debouncers |
@@ -386,7 +386,7 @@ The HUD shows integer averages of accumulated measured cycles and instructions p
 
 `MISSES/SEC` and `UPDATES/SEC` now show recent rates, refreshed after at least 60 timer ticks (approximately one second on the board). They use `floor(delta_count × 60 / elapsed_ticks)`, start at zero on restart, and return to zero after a full window without new work. Misses count only the measured update/checksum windows, not every branch executed during the second. Updates/second should normally be near 60 during active play. Accelerated simulation timers shorten this game-time second. Cumulative totals remain in RAM for replay comparisons; BRANCHES remains cumulative.
 
-`IRQ LAT` remains the latest IRQ request-to-accepted-entry latency, in CPU cycles. At 25 MHz, multiply by 0.04 to convert cycles to microseconds. It includes pipeline draining, excludes physical button debounce and handler execution, and is neither a cumulative total nor an average.
+`IRQ LAT` remains the latest IRQ request-to-accepted-entry latency, in CPU cycles. At the new default 50 MHz CPU clock, multiply by 0.02 to convert cycles to microseconds (0.04 at 25 MHz). It includes pipeline draining, excludes physical button debounce and handler execution, and is neither a cumulative total nor an average.
 
 ### Boundaries and interpretation
 
@@ -504,7 +504,7 @@ Applying these formulas to the documented 120-update simulation results:
 | Prediction off, direct subwords | 96,672 | 68,399 | 1.4134 | 3.867 ms |
 | Prediction on, direct subwords | 80,410 | 68,399 | 1.1756 | 3.216 ms |
 
-These times are conversions of recorded cycle counts at the design's nominal 25 MHz clock. They are **the sum of the measured update/checksum windows**, not wall-clock replay durations or physical timing measurements. A 120-update run paced at approximately 60 updates per second lasts roughly two seconds, mostly outside these measured windows.
+These times are conversions of recorded cycle counts at the historical 25 MHz CPU clock. They are **the sum of the measured update/checksum windows**, not wall-clock replay durations or physical timing measurements. A 120-update run paced at approximately 60 updates per second lasts roughly two seconds, mostly outside these measured windows.
 
 Branch prediction improves CPI while leaving the useful instruction count unchanged in these results. The baseline-to-prediction-only CPI reduction is the same 11.5% as its cycle reduction.
 
@@ -525,7 +525,9 @@ These CPI values inherit the pipeline-boundary qualifications in Section 8. They
 | Time spent executing the workload | Cycle count at a given clock frequency | Fewer measured cycles with prediction and direct subwords |
 | How fast the circuit can safely be clocked | Critical paths and post-route setup/hold reports | Not established by the game counters |
 
-The current board design targets a shared **25 MHz clock**, corresponding to a **40 ns period**. Enhancement modes do not change that clock.
+The current board design uses separate MMCM outputs: a configurable CPU clock (default **50 MHz**, **20 ns**) and fixed **25 MHz VGA clock**, **40 ns**. Set `CPU_CLK_DIVIDE` in `NeonTop.v`; CPU frequency is 800 MHz divided by this integer. Enhancement switches do not change either clock. Timer/debounce/scanning parameters scale with CPU frequency. The 50 MHz target and higher settings still require post-route timing verification.
+
+The CPU freezes its complete shadow display snapshot when it commits. A synchronized request tells the pixel domain to capture it at vertical blank. A synchronized acknowledgement then lets the CPU write the next snapshot. This preserves atomic frames without crossing raw frame pulses or independently synchronizing thousands of data bits. Both domain resets assert together and release synchronously in their respective clocks. The MMCM clocks remain related and the payload paths remain timed.
 
 Additional predictor lookup or subword-selection logic can affect combinational paths. Whether it changes the limiting path or achievable frequency requires implementation reports; fewer workload cycles do not prove a higher maximum clock frequency.
 

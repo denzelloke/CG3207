@@ -70,6 +70,10 @@ set_property -dict { PACKAGE_PIN B11   IOSTANDARD LVCMOS33 } [get_ports { VGA_HS
 set_property -dict { PACKAGE_PIN B12   IOSTANDARD LVCMOS33 } [get_ports { VGA_VS }]; #IO_L3N_T0_DQS_AD1N_15 Sch=vga_vs
 set_property CONFIG_VOLTAGE 3.3 [current_design]
 set_property CFGBVS VCCO [current_design]
-# MMCM clocks are derived automatically. Only raw asynchronous input paths
+# MMCM output clocks are derived automatically: CPU=800MHz/CPU_CLK_DIVIDE,
+# pixel=25MHz. They share an MMCM and remain RELATED. Do not add asynchronous
+# clock groups or blanket false paths between them: the held display payload
+# must retain setup/hold timing analysis. Request/ack use ASYNC_REG synchronizers.
+# Only raw asynchronous input paths
 # to first synchronizer stages are excluded; all functional paths remain timed.
 set_false_path -from [get_ports {DIP[*] PB[*] START RESET}] -to [get_cells -hier -filter {ASYNC_REG == TRUE}]

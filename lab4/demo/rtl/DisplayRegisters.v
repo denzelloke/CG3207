@@ -1,10 +1,14 @@
 `timescale 1ns / 1ps
-// Single clock domain: immutable transfer payload while commit is pending.
-// A commit takes effect at the start of vertical blank. Writes while busy are
-// ignored. Software must wait for busy=0 before modifying shadow state.
+// CPU -> pixel bundled-data handshake. Shadow words stay immutable from commit
+// until the pixel domain captures ALL words at vertical blank and ACK returns.
+// Only request/ack toggles pass through synchronizers; the payload is held stable.
+// Both resets must assert together (as NeonTop guarantees); release may differ.
+// MMCM clocks remain related and payload paths remain timed in NeonTop.xdc.
 module DisplayRegisters (
     input clk,
     reset,
+    pixel_clk,
+    pixel_reset,
     frame_boundary,
     input write_hud,
     write_object,
@@ -18,31 +22,55 @@ module DisplayRegisters (
 );
     reg [31:0] shadow_object[0:63], active_object[0:63];
     reg [31:0] shadow_hud[0:15], active_hud[0:15];
-    integer i;
-    always @(posedge clk) begin
+    reg request_toggle, ack_toggle;
+    (* ASYNC_REG="TRUE" *) reg request_meta, request_sync;
+    (* ASYNC_REG="TRUE" *) reg ack_meta, ack_sync;
+    integer i,j;
+    always @(posedge clk or posedge reset) begin
         if (reset) begin
             busy <= 0;
             frame_sequence <= 0;
+            request_toggle <= 0;
+            ack_meta <= 0;
+            ack_sync <= 0;
             for (i = 0; i < 64; i = i + 1) begin
                 shadow_object[i] <= 0;
-                active_object[i] <= 0;
             end
             for (i = 0; i < 16; i = i + 1) begin
                 shadow_hud[i] <= 0;
-                active_hud[i] <= 0;
             end
         end
         else begin
+            ack_meta <= ack_toggle;
+            ack_sync <= ack_meta;
             if (!busy) begin
                 if (write_object) shadow_object[word_index] <= write_data;
                 if (write_hud) shadow_hud[word_index[3:0]] <= write_data;
-                if (commit) busy <= 1;
+                if (commit) begin
+                    busy <= 1;
+                    request_toggle <= ~request_toggle;
+                end
             end
-            if (busy && frame_boundary) begin
-                for (i = 0; i < 64; i = i + 1) active_object[i] <= shadow_object[i];
-                for (i = 0; i < 16; i = i + 1) active_hud[i] <= shadow_hud[i];
+            if (busy && ack_sync == request_toggle) begin
                 busy <= 0;
                 frame_sequence <= frame_sequence + 1'b1;
+            end
+        end
+    end
+    always @(posedge pixel_clk or posedge pixel_reset) begin
+        if (pixel_reset) begin
+            request_meta <= 0;
+            request_sync <= 0;
+            ack_toggle <= 0;
+            for (j = 0; j < 64; j = j + 1) active_object[j] <= 0;
+            for (j = 0; j < 16; j = j + 1) active_hud[j] <= 0;
+        end else begin
+            request_meta <= request_toggle;
+            request_sync <= request_meta;
+            if (frame_boundary && request_sync != ack_toggle) begin
+                for (j = 0; j < 64; j = j + 1) active_object[j] <= shadow_object[j];
+                for (j = 0; j < 16; j = j + 1) active_hud[j] <= shadow_hud[j];
+                ack_toggle <= request_sync;
             end
         end
     end

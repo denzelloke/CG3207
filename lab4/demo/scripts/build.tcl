@@ -46,6 +46,8 @@ report_timing_summary -report_unconstrained -file "$out/fpga/timing_routed.rpt"
 report_utilization -file "$out/fpga/utilization_routed.rpt"
 report_drc -file "$out/fpga/drc.rpt"
 report_clock_interaction -file "$out/fpga/clock_interaction.rpt"
+report_cdc -details -file "$out/fpga/cdc.rpt"
+report_clocks -file "$out/fpga/clocks.rpt"
 set worst [get_timing_paths -max_paths 1 -nworst 1]
 if {[llength $worst]==0} {error "No timed paths found"}
 set slack [get_property SLACK $worst]

@@ -7,7 +7,7 @@ The target is the **Nexys4 DDR / Artix-7 xc7a100tcsg324-1** pinout already prese
 ## 1. What is implemented
 
 - RISC-V assembly runs movement, firing, four enemies, four bullets, collisions, damage, score, wave progression, game over and restart.
-- One 25 MHz clock drives the CPU and video. VGA is 640×480 with 800×525 totals, approximately **59.524 Hz**, negative sync. The original asynchronous CPU memory contract is preserved.
+- Separate MMCM outputs drive the CPU (default **50 MHz**) and video (fixed **25 MHz**). VGA is 640×480 with 800×525 totals, approximately **59.524 Hz**, negative sync. A request/acknowledgement handshake transfers complete display snapshots between domains. The CPU's asynchronous memory-read contract is preserved.
 - Left/right/fire/start buttons are synchronized and debounced. Switch settings are latched at hardware reset.
 - Display records and HUD values are published atomically at the start of vertical blank. Hardware renders CPU-provided state; it does not run the game rules.
 - Prediction bypass, polling/interrupt scheduling, and direct-subword/word-mask routines coexist in one firmware image.
@@ -99,13 +99,39 @@ Lab4_Neon — xc7a100tcsg324-1
 | Constraints | `demo/constraints/NeonTop.xdc` |
 | Device | `xc7a100tcsg324-1`, Nexys4 DDR pinout |
 | Data-memory initialization | Firmware clears RAM at startup; no `AA_DMEM.mem` is required |
-| Hardware clock | Board 100 MHz input; MMCM generates 25 MHz |
+| Hardware clocks | Board 100 MHz input; MMCM generates CPU 50 MHz by default and fixed VGA 25 MHz |
 
 Do not mix `AA_IROM.mem`, `AA_DMEM.mem`, `old/Wrapper.v`, `old/TOP_Nexys.vhd`, or `old/TOP_Nexys4DDR.xdc` into the game build. They belong to the historical lab setup. However, the seven CPU files under `old/` listed in the source manifest are still required. Do not add every file in the repository recursively, and do not define `SIMULATION` for synthesis.
 
 After setup, inspect the hierarchy, then run synthesis, implementation and Generate Bitstream. The GUI project's generated bitstream normally appears under `build/vivado/Lab4_Neon/Lab4_Neon.runs/impl_1/NeonTop.bit`; the separate batch build below uses `build/fpga/NeonTop.bit`. Reassemble after changes to `game.asm` and rebuild the bitstream; an older bitstream does not pick up an edited ROM automatically. Source the setup script again to refresh the dedicated project and ROM, or run `assemble.py` directly for a firmware-only refresh.
 
 ### Programming
+
+#### Selecting CPU frequency without changing VGA
+
+Set **`CPU_CLK_DIVIDE` in `rtl/NeonTop.v`**, then rebuild. CPU frequency is `800 MHz / CPU_CLK_DIVIDE`. The independent pixel output always uses divider 32 and stays at 25 MHz. Supported divider range is integer 8–128. Default 16 (50 MHz) is a target that still requires successful post-route timing on your FPGA build.
+
+| CPU_CLK_DIVIDE | CPU frequency | Pixel frequency |
+|---:|---:|---:|
+| 32 | 25 MHz | 25 MHz |
+| 24 | 33.333 MHz | 25 MHz |
+| 20 | 40 MHz | 25 MHz |
+| 16 (default) | 50 MHz | 25 MHz |
+| 12 | 66.667 MHz | 25 MHz |
+| 10 | 80 MHz | 25 MHz |
+| 8 | 100 MHz | 25 MHz |
+
+Only change that parameter. Keep the input XDC clock at 10 ns (100 MHz), feedback multiplier at 8, input divider at 1, and `CLKOUT1_DIVIDE(32)` fixed. Vivado derives both generated clocks. The timer capability scales to approximately 60 ticks/second, debounce scales to 10 ms, and seven-segment scanning remains approximately 750 complete scans/second. Firmware already reads the timer capability, so no assembly timing constant needs editing.
+
+CPU, memory, inputs, interrupts, counters and seven-segment scanning use `cpu_clk`. VGA timing, active display state and rendering output registers use `pixel_clk`. Global reset/MMCM unlock asserts both domain resets asynchronously; each releases reset synchronously after startup. Standalone integrations must assert both display resets together (release can differ).
+
+`IRQ LAT` remains in CPU cycles: at 50 MHz each cycle is 0.02 microseconds; at 25 MHz it is 0.04 microseconds. Per-second HUD rates use the scaled timer and need no adjustment.
+
+This split does not establish maximum frequency. Inspect setup/hold, clock interaction, CDC and unconstrained-path reports at each setting. Both clocks come from one MMCM and remain related: do not blanket-false-path them or put them in asynchronous clock groups. The held payload bus must retain timing analysis. A custom handshake can appear in CDC reports as a multi-bit transfer; inspect its stable-payload protocol rather than waiving every crossing. Full hardware timing/CDC review remains required.
+
+Run `--suite clocks --cpu-divide 16` (also try 32 and 24) for behavioural CPU/pixel periods, unchanged VGA HS timing, timer configuration and reset checks. `--suite units` includes `test_display_cdc` at four clock ratios, atomic publication, rejected busy writes/commits, and reset before capture and during acknowledgement. Game/control tests now run with distinct CPU/pixel clocks. These simulations do not model MMCM analogue behaviour, metastability or routed timing.
+
+#### Board programming steps
 
 1. Connect the FPGA board's VGA port to a monitor and connect/program through USB/JTAG.
 2. Select the desired switches before releasing **DOWN/BTND** reset. For normal enhanced gameplay set **SW0, SW1, SW2 ON** and leave SW3–SW5 OFF.
@@ -272,7 +298,7 @@ vivado -mode batch -source lab4/demo/scripts/build.tcl -tclargs lab4/demo/build 
 vivado -mode batch -source lab4/demo/scripts/build.tcl -tclargs lab4/demo/build bitstream
 ```
 
-The bitstream path runs synthesis, optimization, placement, physical optimization, routing, timing/utilization/DRC reports, then writes the bitstream. Review all reports, including hold timing, unconstrained paths and clock interaction; an old report for the 6.25 MHz or much slower CPU is not evidence for this 25 MHz design.
+The bitstream path runs synthesis, optimization, placement, physical optimization, routing, timing/utilization/DRC/CDC/clock reports, then writes the bitstream. Review all reports, including hold timing, unconstrained paths and clock interaction; old single-clock reports are not evidence for this dual-clock design.
 
 For functional post-synthesis simulation after generating `fpga/neon_synth.v`:
 
@@ -282,7 +308,7 @@ vivado -mode batch -source lab4/demo/scripts/post_synth.tcl -tclargs lab4/demo/b
 
 `test_board.v` is a port-only smoke test usable against the synthesized netlist. It checks stable known video/display outputs, HS/VS pulse widths, ongoing video and software LED initialization. Expected completion marker: **`BOARD PORTS PASS`**. This test does not replace the deeper behavioral game/counter tests. It is functional netlist simulation, not an SDF timing simulation.
 
-A behavioral top simulation can compile `test_board.v` with `SIMULATION` defined. That selects a portable 100-to-25 MHz divider in place of the FPGA MMCM primitive. Never define `SIMULATION` for the real FPGA build; the build Tcl intentionally does not.
+A behavioral top simulation can compile `test_board.v` with `SIMULATION` defined. That selects a delay-based CPU clock model and a 100-to-25 MHz pixel divider in place of the FPGA MMCM primitive. Never define `SIMULATION` for the real FPGA build; the build Tcl intentionally does not.
 
 Physical programming is a separate user action: open Hardware Manager, connect to the board, select `NeonTop.bit` and program. The scripts do not program a device automatically.
 
@@ -362,7 +388,7 @@ HUD words 0–13: state, score BCD, health, wave BCD, modes, average cycles BCD,
 
 Display record: word0 = `{y[15:0],x[15:0]}`, word1 low nibble = kind (1 player, 2 enemy, 3 bullet), word2 low 12 bits = RGB444, word3 bit0 = visible. The renderer uses slots 0–8. Slots 9–15 are reserved.
 
-Display writes are accepted only when busy=0. A commit freezes shadow state until vertical blank copies the whole bank and clears busy. Writes and additional commit requests while busy are ignored. Firmware checks busy before publication; if the previous frame is still pending, gameplay continues and publishing waits for a later update. Both producer and consumer use the same clock, so there is no multi-bit clock-domain crossing.
+Display writes are accepted only when CPU-domain busy=0. A commit freezes the CPU shadow words and toggles a request. After two pixel-domain synchronizer stages, the pixel domain copies the entire object/HUD bank at vertical blank and returns an acknowledgement toggle. After two CPU-domain synchronizer stages, the CPU clears busy and increments frame_sequence. A write accompanying the accepted commit is included in that snapshot. Writes and extra commits while busy are ignored, including during acknowledgement return. The payload stays stable throughout this handshake, rather than synchronizing each bit independently. Frame-boundary pulses stay in the pixel domain. Gameplay continues if display publication must wait.
 
 ## 10. Troubleshooting
 
@@ -411,4 +437,4 @@ The longer 600-update run measured 654,731 update-window cycles and 492,905 reti
 
 During implementation in this environment, Vivado exited at startup with **“a valid license was not found.”** Therefore no newly synthesized/routed bitfile, post-synthesis PASS, timing closure, or physical FPGA result is claimed here. The build and post-synthesis scripts are provided for a usable Vivado installation, and the physical checklist above is still required.
 
-Preserve actual results when you perform those steps. The historical implementation reports under `lab4/lab4_vivado/` do not describe this new top or its 25 MHz timing.
+Preserve actual results when you perform those steps. Historical reports for older tops do not describe the current dual-clock top or prove timing at its selected CPU frequency.
